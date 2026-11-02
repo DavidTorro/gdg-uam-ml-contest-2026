@@ -27,6 +27,13 @@ def main() -> None:
     parser.add_argument("--id", help="Identificador único, por ejemplo exp001")
     parser.add_argument("--muestras", type=int, default=5_000)
     parser.add_argument("--iteraciones", type=int, default=80)
+    parser.add_argument("--arquitectura", choices=("histgb", "cnn"), default="histgb")
+    parser.add_argument("--epocas", type=int, default=12, help="Épocas de la CNN")
+    parser.add_argument("--batch-size", type=int, default=256, help="Tamaño de lote de la CNN")
+    parser.add_argument("--aumento-ruido", action="store_true", help="Entrena también con copias ruidosas")
+    parser.add_argument("--aumento-ritmo", action="store_true", help="Varía el ritmo de las copias ruidosas")
+    parser.add_argument("--temporales", action="store_true", help="Añade características de tramos temporales")
+    parser.add_argument("--extendidas", action="store_true", help="Añade características estadísticas y espectrales detalladas")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--max-muestras", type=int, default=1_000)
     parser.add_argument("--presupuesto-s", type=float, default=2.0)
@@ -49,13 +56,21 @@ def main() -> None:
 
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", args.id):
         parser.error("--id debe usar letras minúsculas, números, guiones o guiones bajos")
-    if args.muestras < 8 or args.iteraciones < 1 or args.runs < 1 or args.max_muestras < 1 or args.presupuesto_s <= 0:
+    if (args.muestras < 8 or args.iteraciones < 1 or args.epocas < 1 or args.batch_size < 1
+            or args.runs < 1 or args.max_muestras < 1 or args.presupuesto_s <= 0):
         parser.error("--muestras debe ser al menos 8; los demás valores numéricos deben ser positivos")
+    if args.arquitectura == "cnn" and args.muestras < 80:
+        parser.error("La CNN requiere al menos 80 muestras para separar control interno")
+    if args.arquitectura == "cnn" and (args.aumento_ruido or args.aumento_ritmo or args.temporales or args.extendidas):
+        parser.error("Las opciones de características y aumento anteriores solo se usan con histgb")
+    if args.aumento_ritmo and not args.aumento_ruido:
+        parser.error("--aumento-ritmo requiere --aumento-ruido")
 
     # Cada experimento conserva sus pesos y JSON oficiales propios
     carpeta = ROOT / "experiments" / args.id
     salida = ROOT / "results" / args.id
-    pesos = ROOT / "models" / f"{args.id}.pkl"
+    extension = ".pt" if args.arquitectura == "cnn" else ".pkl"
+    pesos = ROOT / "models" / f"{args.id}{extension}"
     for ruta in (carpeta, salida, pesos):
         if ruta.exists():
             parser.error(f"Ya existe {ruta}; elige otro --id para no sobrescribir el historial")
@@ -68,13 +83,23 @@ def main() -> None:
 
     # Se usa el mismo intérprete Python que inició este script
     # El entrenamiento solo lee train_90k y guarda pesos independientes
+    script_entrenamiento = "entrenar_cnn.py" if args.arquitectura == "cnn" else "entrenar_modelo.py"
     entrenamiento = [
-        sys.executable,
-        str(ROOT / "scripts/entrenar_modelo.py"),
-        "--id", args.id,
-        "--muestras", str(args.muestras),
-        "--iteraciones", str(args.iteraciones),
+        sys.executable, str(ROOT / "scripts" / script_entrenamiento),
+        "--id", args.id, "--muestras", str(args.muestras),
     ]
+    if args.arquitectura == "cnn":
+        entrenamiento += ["--epocas", str(args.epocas), "--batch-size", str(args.batch_size)]
+    else:
+        entrenamiento += ["--iteraciones", str(args.iteraciones)]
+        if args.aumento_ruido:
+            entrenamiento.append("--aumento-ruido")
+        if args.aumento_ritmo:
+            entrenamiento.append("--aumento-ritmo")
+        if args.temporales:
+            entrenamiento.append("--temporales")
+        if args.extendidas:
+            entrenamiento.append("--extendidas")
     print("\n1/2 Entrenamiento", flush=True)
     subprocess.run(entrenamiento, cwd=ROOT, check=True)
 
@@ -83,7 +108,16 @@ def main() -> None:
     configuracion = {
         "id": args.id,
         "fecha_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "entrenamiento": {"muestras": args.muestras, "iteraciones": args.iteraciones},
+        "entrenamiento": {
+            "arquitectura": args.arquitectura,
+            "muestras": args.muestras,
+            "iteraciones": args.epocas if args.arquitectura == "cnn" else args.iteraciones,
+            "batch_size": args.batch_size if args.arquitectura == "cnn" else None,
+            "aumento_ruido": args.aumento_ruido,
+            "aumento_ritmo": args.aumento_ritmo,
+            "temporales": args.temporales,
+            "extendidas": args.extendidas,
+        },
         "evaluacion": {
             "source": "file:data/val_10k.npz",
             "runs": args.runs,
@@ -97,8 +131,9 @@ def main() -> None:
         },
         "sha256": {
             "model.py": sha256(ROOT / "model.py"),
-            "src/caracteristicas.py": sha256(ROOT / "src/caracteristicas.py"),
-            "scripts/entrenar_modelo.py": sha256(ROOT / "scripts/entrenar_modelo.py"),
+            "src/caracteristicas.py" if args.arquitectura == "histgb" else "src/red_convolucional.py":
+                sha256(ROOT / "src" / ("caracteristicas.py" if args.arquitectura == "histgb" else "red_convolucional.py")),
+            f"scripts/{script_entrenamiento}": sha256(ROOT / "scripts" / script_entrenamiento),
             "harness.py": sha256(HARNESS),
             "pesos": sha256(pesos),
         },
@@ -111,7 +146,7 @@ def main() -> None:
     # El evaluador recibe solo validación y carga los pesos de este experimento
     # Los límites indicados aquí son de prueba rápida, no de evaluación final
     entorno = os.environ.copy()
-    entorno["GDG_MODEL_PATH"] = f"models/{args.id}.pkl"
+    entorno["GDG_MODEL_PATH"] = f"models/{args.id}{extension}"
     evaluacion = [
         sys.executable, str(HARNESS), "evaluate",
         "--model", "model.py",
