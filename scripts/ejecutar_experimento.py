@@ -1,4 +1,4 @@
-"""Entrena, evalúa y publica un experimento en el cuaderno local"""
+"""Entrena y evalúa un experimento para importarlo en el dashboard"""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def main() -> None:
     if args.runs < 1 or args.max_muestras < 1 or args.presupuesto_s <= 0:
         parser.error("--runs, --max-muestras y --presupuesto-s deben ser positivos")
 
-    # Cada experimento conserva sus pesos, JSON oficiales y página propios
+    # Cada experimento conserva sus pesos y JSON oficiales propios
     carpeta = ROOT / "experiments" / args.id
     salida = ROOT / "results" / args.id
     pesos = ROOT / "models" / f"{args.id}.pkl"
@@ -60,7 +60,7 @@ def main() -> None:
         "--muestras", str(args.muestras),
         "--iteraciones", str(args.iteraciones),
     ]
-    print("\n1/3 Entrenamiento", flush=True)
+    print("\n1/2 Entrenamiento", flush=True)
     subprocess.run(entrenamiento, cwd=ROOT, check=True)
 
     # Guardamos la configuración antes de evaluar para diagnosticar fallos
@@ -106,17 +106,12 @@ def main() -> None:
         "--set", f"max_scored_samples={args.max_muestras}",
         "--set", f"time_budget_s={args.presupuesto_s}",
     ]
-    print("\n2/3 Evaluación oficial sobre validación", flush=True)
+    print("\n2/2 Evaluación oficial sobre validación", flush=True)
     subprocess.run(evaluacion, cwd=ROOT, env=entorno, check=True)
-
-    # El informe toma todas las cifras de los JSON escritos por el evaluador
-    print("\n3/3 Actualización de MkDocs local", flush=True)
-    subprocess.run(
-        [sys.executable, str(ROOT / "scripts/generar_informe.py"), "--id", args.id],
-        cwd=ROOT,
-        check=True,
+    print(
+        f"\nExperimento {args.id} terminado. Importa results/{args.id}/model "
+        f"y experiments/{args.id} en el dashboard"
     )
-    print(f"\nExperimento {args.id} terminado; abre el cuaderno con python -m mkdocs serve")
 
 
 if __name__ == "__main__":

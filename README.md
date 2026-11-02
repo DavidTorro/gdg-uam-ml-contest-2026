@@ -10,7 +10,13 @@ Proyecto de David Torró para el 1.º Machine Learning Contest de GDG on Campus 
 
 Este repositorio contiene el modelo que se entregará: `model.py`, los pesos en `models/`, el código de características en `src/` y `requirements.txt`. El panel hermano `../ml-dashboard/` sirve para leer los resultados; no forma parte de la entrega.
 
-Los datos descargados, las particiones, los resultados del evaluador y los informes locales permanecen fuera de Git. Cada experimento usa un `id` nuevo y conserva sus pesos y JSON por separado. Para comparar modelos, usa el mismo archivo de evaluación y los mismos límites; después importa `results/<id>/model` y `experiments/<id>` en el dashboard.
+Los datos descargados, las particiones y los resultados del evaluador permanecen fuera de Git. Cada experimento usa un `id` nuevo y conserva sus pesos y JSON por separado. Para comparar modelos, usa el mismo archivo de evaluación y los mismos límites; después importa `results/<id>/model` y `experiments/<id>` en el dashboard.
+
+La partición fija usa la semilla `2026`: `data/train_90k.npz` para entrenar y `data/val_10k.npz` para validar. El script `scripts/ejecutar_experimento.py` entrena, ejecuta el evaluador oficial y guarda los JSON necesarios para el dashboard. Por ejemplo, el siguiente experimento controlado mantiene 80 iteraciones y sube a 30 000 muestras:
+
+```bash
+.venv/bin/python scripts/ejecutar_experimento.py --id exp003 --muestras 30000 --iteraciones 80 --runs 1 --max-muestras 1000 --presupuesto-s 2
+```
 
 ## Estado de los modelos
 
