@@ -39,6 +39,9 @@ def main() -> None:
     parser.add_argument("--equilibrar", action="store_true", help="CNN: todas las clases pesan igual")
     parser.add_argument("--ancho", type=int, default=1, help="CNN: multiplica los filtros de la red")
     parser.add_argument("--elegir-epoca", choices=("control", "examen"), default="control", help="CNN: cómo elegir la mejor época")
+    parser.add_argument("--lr", type=float, default=0.001, help="CNN: tasa de aprendizaje")
+    parser.add_argument("--semilla", type=int, default=2026, help="CNN: semilla del entrenamiento")
+    parser.add_argument("--ajustes-simulador", default="{}", help="CNN: JSON con ajustes del simulador")
     parser.add_argument("--validacion", choices=("val_10k", "val_examen", "val_examen_v2"), default="val_10k",
                         help="Archivo de la evaluación oficial; los val_examen usan todo el archivo y 60 s")
     parser.add_argument("--runs", type=int, default=1)
@@ -103,7 +106,9 @@ def main() -> None:
     ]
     if args.arquitectura == "cnn":
         entrenamiento += ["--epocas", str(args.epocas), "--batch-size", str(args.batch_size),
-                          "--ancho", str(args.ancho), "--elegir-epoca", args.elegir_epoca]
+                          "--ancho", str(args.ancho), "--elegir-epoca", args.elegir_epoca,
+                          "--lr", str(args.lr), "--semilla", str(args.semilla),
+                          "--ajustes-simulador", args.ajustes_simulador]
         for activo, opcion in ((args.aumento_ruido, "--aumento-ruido"), (args.simular_examen, "--simular-examen"),
                                (args.sin_atajos, "--sin-atajos"), (args.equilibrar, "--equilibrar")):
             if activo:
@@ -140,6 +145,9 @@ def main() -> None:
             "equilibrar": args.equilibrar,
             "ancho": args.ancho,
             "elegir_epoca": args.elegir_epoca,
+            "lr": args.lr,
+            "semilla": args.semilla,
+            "ajustes_simulador": json.loads(args.ajustes_simulador),
         },
         "evaluacion": {
             "source": f"file:data/{args.validacion}.npz",

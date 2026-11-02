@@ -92,7 +92,16 @@ def main() -> None:
     parser.add_argument("--ancho", type=int, default=1, help="Multiplica los filtros de la red")
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--semilla", type=int, default=2026)
+    parser.add_argument("--ajustes-simulador", default="{}",
+                        help='JSON con valores de PARAMETROS que cambian, por ejemplo {"prob_ritmo_23": 0.5}')
     args = parser.parse_args()
+    try:
+        ajustes = json.loads(args.ajustes_simulador)
+    except json.JSONDecodeError as error:
+        parser.error(f"--ajustes-simulador no es JSON válido: {error}")
+    desconocidos = sorted(set(ajustes) - set(PARAMETROS))
+    if not isinstance(ajustes, dict) or desconocidos:
+        parser.error(f"--ajustes-simulador tiene claves desconocidas: {desconocidos}")
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", args.id):
         parser.error("--id debe usar letras minúsculas, números, guiones o guiones bajos")
     if args.epocas < 1 or args.batch_size < 1 or args.ancho < 1:
@@ -170,7 +179,7 @@ def main() -> None:
             series, niveles = [], []
             for inicio in range(0, len(entrenamiento_idx), 10_000):
                 bloque = entrenamiento_idx[inicio:inicio + 10_000]
-                s, nv = simular_examen(datos["series"][bloque], rng)
+                s, nv = simular_examen(datos["series"][bloque], rng, parametros=ajustes)
                 series.append(s)
                 niveles.append(nv)
             serie_e, aux_e = preparar(datos, entrenamiento_idx, args.sin_atajos,
@@ -250,7 +259,7 @@ def main() -> None:
         "muestras_control_interno": int(len(control_pos)),
         "aumento_ruido": args.aumento_ruido,
         "simular_examen": args.simular_examen,
-        "parametros_simulador": PARAMETROS if args.simular_examen else None,
+        "parametros_simulador": {**PARAMETROS, **ajustes} if args.simular_examen else None,
         "sin_atajos": args.sin_atajos,
         "equilibrar": args.equilibrar,
         "elegir_epoca": args.elegir_epoca,
