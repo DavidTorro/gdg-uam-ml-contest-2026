@@ -29,8 +29,8 @@ from competition_api import load_dataset
 from src.red_convolucional import RedConvolucional, preparar_muestra
 
 
-def preparar(dataset, indices) -> tuple[torch.Tensor, torch.Tensor, np.ndarray]:
-    series, auxiliares = zip(*(preparar_muestra(dataset[int(j)]) for j in indices))
+def preparar(dataset, indices, sin_atajos: bool = False) -> tuple[torch.Tensor, torch.Tensor, np.ndarray]:
+    series, auxiliares = zip(*(preparar_muestra(dataset[int(j)], sin_atajos=sin_atajos) for j in indices))
     etiquetas = np.asarray(dataset.labels[indices], dtype=np.int64)
     return torch.from_numpy(np.stack(series)), torch.from_numpy(np.stack(auxiliares)), etiquetas
 
@@ -105,7 +105,8 @@ def main() -> None:
     artefacto = torch.load(ROOT / args.pesos, map_location="cpu", weights_only=True)
     if artefacto.get("formato") != "gdg-cnn-v1":
         raise ValueError(f"Formato de pesos CNN desconocido: {args.pesos}")
-    red = RedConvolucional()
+    red = RedConvolucional(ancho=int(artefacto.get("ancho", 1)))
+    sin_atajos = bool(artefacto.get("sin_atajos", False))
     red.load_state_dict(artefacto["state_dict"])
     red.eval()
 
@@ -115,9 +116,9 @@ def main() -> None:
         np.arange(len(train)), train_size=args.muestras_train,
         stratify=train.labels, random_state=2028,
     )
-    serie_t, aux_t, y_t = preparar(train, np.sort(elegidos))
+    serie_t, aux_t, y_t = preparar(train, np.sort(elegidos), sin_atajos)
     demo = load_dataset(str(ROOT / "data/test_demo.npz"))
-    serie_d, aux_d, y_d = preparar(demo, np.arange(len(demo)))
+    serie_d, aux_d, y_d = preparar(demo, np.arange(len(demo)), sin_atajos)
     resumen_t = resumir(red, serie_t, aux_t)
     resumen_d = resumir(red, serie_d, aux_d)
     print(f"Muestras preparadas en {perf_counter() - inicio:.1f} s", flush=True)

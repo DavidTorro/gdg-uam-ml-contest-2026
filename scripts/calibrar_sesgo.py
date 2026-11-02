@@ -33,13 +33,15 @@ def main() -> None:
     artefacto = torch.load(ROOT / args.pesos, map_location="cpu", weights_only=True)
     if artefacto.get("formato") != "gdg-cnn-v1":
         raise ValueError(f"Formato de pesos CNN desconocido: {args.pesos}")
-    red = RedConvolucional()
+    # Los pesos desde exp022 guardan su ancho y si se entrenaron sin las auxiliares tramposas
+    red = RedConvolucional(ancho=int(artefacto.get("ancho", 1)))
+    sin_atajos = bool(artefacto.get("sin_atajos", False))
     red.load_state_dict(artefacto["state_dict"])
     red.eval()
 
     # Preparamos cada muestra igual que model.py y calculamos la salida de la red
     datos = load_dataset(str(ROOT / args.datos))
-    series, auxiliares = zip(*(preparar_muestra(datos[j]) for j in range(len(datos))))
+    series, auxiliares = zip(*(preparar_muestra(datos[j], sin_atajos=sin_atajos) for j in range(len(datos))))
     with torch.inference_mode():
         salida = red(torch.from_numpy(np.stack(series)), torch.from_numpy(np.stack(auxiliares))).numpy()
 
