@@ -23,12 +23,33 @@ from competition_api import load_dataset
 from src.red_convolucional import RedConvolucional, preparar_muestra
 
 
+def aumentar_senales(serie: torch.Tensor, auxiliares: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Simula ruido rápido y huecos extra únicamente en los lotes de entrenamiento."""
+    cantidad, canales, _ = serie.shape
+    activo = (torch.rand((cantidad, 1, 1), device=serie.device) < 0.7).to(serie.dtype)
+    intensidad = (0.08 + 0.22 * torch.rand((cantidad, canales, 1), device=serie.device)) * activo
+    aumentada = serie + torch.randn_like(serie) * intensidad
+
+    # Sustituimos pocos puntos por la media de sus vecinos, como una
+    # aproximación de la interpolación que se hace con los huecos reales.
+    huecos = torch.rand(serie.shape, device=serie.device) < 0.008
+    izquierda = torch.cat((aumentada[:, :, :1], aumentada[:, :, :-1]), dim=2)
+    derecha = torch.cat((aumentada[:, :, 1:], aumentada[:, :, -1:]), dim=2)
+    aumentada = torch.where(huecos, (izquierda + derecha) * 0.5, aumentada)
+    auxiliares = auxiliares.clone()
+    auxiliares[:, 8:12] = torch.clamp(
+        auxiliares[:, 8:12] + huecos.float().mean(dim=2), max=1.0
+    )
+    return aumentada.clamp(-6.0, 6.0), auxiliares
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--id", required=True)
     parser.add_argument("--muestras", type=int, default=90_000)
     parser.add_argument("--epocas", type=int, default=12)
     parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--aumento-ruido", action="store_true", help="Añade ruido y huecos nuevos a los lotes de entrenamiento")
     args = parser.parse_args()
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", args.id):
         parser.error("--id debe usar letras minúsculas, números, guiones o guiones bajos")
@@ -92,6 +113,8 @@ def main() -> None:
             serie = serie.to(dispositivo)
             auxiliar = auxiliar.to(dispositivo)
             etiqueta = etiqueta.to(dispositivo)
+            if args.aumento_ruido:
+                serie, auxiliar = aumentar_senales(serie, auxiliar)
             optimizador.zero_grad(set_to_none=True)
             perdida = criterio(red(serie, auxiliar), etiqueta)
             perdida.backward()
@@ -132,6 +155,7 @@ def main() -> None:
         "muestras_seleccionadas": int(len(indices)),
         "muestras_entrenamiento": int(len(entrenamiento_idx)),
         "muestras_control_interno": int(len(control_idx)),
+        "aumento_ruido": args.aumento_ruido,
         "clases_entrenamiento": np.bincount(etiquetas[entrenamiento_idx], minlength=8).tolist(),
         "caracteristicas_por_muestra": 4 * 256 + 17,
         "iteraciones": args.epocas,

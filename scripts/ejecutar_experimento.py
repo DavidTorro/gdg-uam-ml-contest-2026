@@ -30,7 +30,7 @@ def main() -> None:
     parser.add_argument("--arquitectura", choices=("histgb", "cnn"), default="histgb")
     parser.add_argument("--epocas", type=int, default=12, help="Épocas de la CNN")
     parser.add_argument("--batch-size", type=int, default=256, help="Tamaño de lote de la CNN")
-    parser.add_argument("--aumento-ruido", action="store_true", help="Entrena también con copias ruidosas")
+    parser.add_argument("--aumento-ruido", action="store_true", help="HGB: copias ruidosas; CNN: ruido y huecos por lote")
     parser.add_argument("--aumento-ritmo", action="store_true", help="Varía el ritmo de las copias ruidosas")
     parser.add_argument("--temporales", action="store_true", help="Añade características de tramos temporales")
     parser.add_argument("--extendidas", action="store_true", help="Añade características estadísticas y espectrales detalladas")
@@ -61,8 +61,8 @@ def main() -> None:
         parser.error("--muestras debe ser al menos 8; los demás valores numéricos deben ser positivos")
     if args.arquitectura == "cnn" and args.muestras < 80:
         parser.error("La CNN requiere al menos 80 muestras para separar control interno")
-    if args.arquitectura == "cnn" and (args.aumento_ruido or args.aumento_ritmo or args.temporales or args.extendidas):
-        parser.error("Las opciones de características y aumento anteriores solo se usan con histgb")
+    if args.arquitectura == "cnn" and (args.aumento_ritmo or args.temporales or args.extendidas):
+        parser.error("--aumento-ritmo, --temporales y --extendidas solo se usan con histgb")
     if args.aumento_ritmo and not args.aumento_ruido:
         parser.error("--aumento-ritmo requiere --aumento-ruido")
 
@@ -90,6 +90,8 @@ def main() -> None:
     ]
     if args.arquitectura == "cnn":
         entrenamiento += ["--epocas", str(args.epocas), "--batch-size", str(args.batch_size)]
+        if args.aumento_ruido:
+            entrenamiento.append("--aumento-ruido")
     else:
         entrenamiento += ["--iteraciones", str(args.iteraciones)]
         if args.aumento_ruido:
