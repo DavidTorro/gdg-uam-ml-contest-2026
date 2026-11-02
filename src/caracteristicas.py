@@ -7,7 +7,7 @@ import numpy as np
 from competition_api import Sample
 
 
-def extraer(sample: Sample) -> np.ndarray:
+def extraer(sample: Sample, *, temporales: bool = False, extendidas: bool = False) -> np.ndarray:
     """Resume una muestra siempre con las mismas características y en el mismo orden"""
     series = sample.series
     tiempos = np.arange(series.shape[1])
@@ -71,7 +71,33 @@ def extraer(sample: Sample) -> np.ndarray:
             pares,
             metadatos,
         ]
-    ).astype(np.float32)
+    )
+
+    if temporales:
+        # Ocho medias por canal conservan la forma a lo largo del tiempo.
+        # Cada tramo promedia 32 valores y atenúa parte del ruido rápido.
+        tramos = normalizada.reshape(normalizada.shape[0], 8, 32).mean(axis=2)
+        vector = np.concatenate([vector, tramos.ravel()])
+
+    if extendidas:
+        # Más detalle de distribución, persistencia y frecuencias. El cálculo de
+        # la FFT ya se hizo para las cuatro bandas originales.
+        cuantiles_extra = np.percentile(normalizada, [5, 25, 75, 95], axis=1).T
+        retardos = (2, 4, 8, 16, 32)
+        autocorrelaciones_extra = np.stack(
+            [(normalizada[:, lag:] * normalizada[:, :-lag]).mean(axis=1) for lag in retardos],
+            axis=1,
+        )
+        bandas_finas = np.array_split(potencia, 8, axis=1)
+        espectro_fino = np.log1p(np.stack([banda.sum(axis=1) for banda in bandas_finas], axis=1))
+        vector = np.concatenate([
+            vector,
+            cuantiles_extra.ravel(),
+            autocorrelaciones_extra.ravel(),
+            espectro_fino.ravel(),
+        ])
+
+    vector = vector.astype(np.float32)
 
     # El modelo recibe un vector finito incluso en una muestra extrema
     return np.nan_to_num(vector, nan=0.0, posinf=0.0, neginf=0.0)

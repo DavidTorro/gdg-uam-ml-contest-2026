@@ -13,6 +13,10 @@ FIELDS = (
     ("id", "ID"),
     ("muestras", "Muestras de entrenamiento"),
     ("iteraciones", "Iteraciones"),
+    ("aumento_ruido", "Copia con ruido y huecos (0=no, 1=sí)"),
+    ("aumento_ritmo", "Variar ritmo de la copia (0=no, 1=sí)"),
+    ("temporales", "Perfil temporal (0=no, 1=sí)"),
+    ("extendidas", "Detalle estadístico y espectral (0=no, 1=sí)"),
     ("runs", "Ejecuciones de evaluación"),
     ("max_muestras", "Máximo de muestras puntuadas"),
     ("presupuesto_s", "Tiempo máximo para predecir (s)"),
@@ -49,6 +53,10 @@ def comprobar(campo: str, valor: str) -> int | float | str:
         numero = float(valor.replace(",", ".")) if campo == "presupuesto_s" else int(valor)
     except ValueError as error:
         raise ValueError("Introduce un número válido") from error
+    if campo in ("aumento_ruido", "aumento_ritmo", "temporales", "extendidas"):
+        if numero not in (0, 1):
+            raise ValueError("Elige 0 (no) o 1 (sí)")
+        return numero
     if campo == "presupuesto_s" and (not math.isfinite(numero) or numero <= 0):
         raise ValueError("El presupuesto debe ser mayor que cero")
     if campo == "muestras" and numero < 8:
@@ -88,7 +96,11 @@ def pantalla_menu(pantalla: curses.window) -> dict[str, int | float | str] | Non
     valores: dict[str, int | float | str] = {
         "id": siguiente_id(),
         "muestras": 90_000,
-        "iteraciones": 40,
+        "iteraciones": 70,
+        "aumento_ruido": 0,
+        "aumento_ritmo": 0,
+        "temporales": 0,
+        "extendidas": 0,
         "runs": 1,
         "max_muestras": 1_000,
         "presupuesto_s": 2.0,
@@ -100,11 +112,11 @@ def pantalla_menu(pantalla: curses.window) -> dict[str, int | float | str] | Non
     while True:
         pantalla.erase()
         alto, ancho = pantalla.getmaxyx()
-        if alto < 15 or ancho < 48:
-            escribir(pantalla, 0, "Amplía la terminal (mínimo 48 × 15) o pulsa Esc")
+        if alto < 20 or ancho < 48:
+            escribir(pantalla, 0, "Amplía la terminal (mínimo 48 × 20) o pulsa Esc")
         else:
             escribir(pantalla, 0, "Nuevo experimento (↑/↓, Enter para editar; Esc para cancelar):")
-            escribir(pantalla, 2, "Propuesta inicial: 90k muestras y 40 iteraciones")
+            escribir(pantalla, 2, "Propuesta inicial: 90k muestras y 70 iteraciones")
             for indice, (clave, nombre) in enumerate(FIELDS):
                 estilo = curses.A_BOLD | (curses.color_pair(1) if curses.has_colors() else curses.A_REVERSE) if indice == elegido else 0
                 prefijo = "❯" if indice == elegido else " "
@@ -120,11 +132,13 @@ def pantalla_menu(pantalla: curses.window) -> dict[str, int | float | str] | Non
             elegido = (elegido - 1) % (len(FIELDS) + 1)
         elif tecla == curses.KEY_DOWN:
             elegido = (elegido + 1) % (len(FIELDS) + 1)
-        elif tecla in (10, 13, curses.KEY_ENTER) and alto >= 15 and ancho >= 48:
+        elif tecla in (10, 13, curses.KEY_ENTER) and alto >= 20 and ancho >= 48:
             if elegido == len(FIELDS):
                 try:
                     for clave, _ in FIELDS:
                         comprobar(clave, str(valores[clave]))
+                    if valores["aumento_ritmo"] and not valores["aumento_ruido"]:
+                        raise ValueError("Variar ritmo requiere activar la copia con ruido")
                 except ValueError as fallo:
                     error = str(fallo)
                 else:
