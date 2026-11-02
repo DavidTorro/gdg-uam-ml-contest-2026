@@ -4,7 +4,7 @@ Sin opciones nuevas reproduce exp015 a exp020: separa un 10 % de control interno
 la época de menor pérdida en él. Desde exp022 se puede entrenar como para el examen:
 --simular-examen pasa cada época por src/simulador.py, --sin-atajos anula las auxiliares
 que delatan la clase solo en train, --equilibrar hace que todas las clases pesen igual y
---elegir-epoca examen elige la época con la mejor nota en data/val_examen.npz.
+--elegir-epoca examen elige la época con la mejor nota en el archivo de --archivo-examen.
 """
 
 from __future__ import annotations
@@ -86,7 +86,9 @@ def main() -> None:
     parser.add_argument("--sin-atajos", action="store_true", help="Anula las medias y el level en las auxiliares")
     parser.add_argument("--equilibrar", action="store_true", help="Todas las clases pesan igual en la pérdida")
     parser.add_argument("--elegir-epoca", choices=("control", "examen"), default="control",
-                        help="control: menor pérdida en el 10 %% interno; examen: mejor nota en val_examen")
+                        help="control: menor pérdida en el 10 %% interno; examen: mejor nota en --archivo-examen")
+    parser.add_argument("--archivo-examen", default="data/val_examen_v2.npz",
+                        help="Examen de prácticas para elegir la época; val_examen.npz es el de exp022, con huella")
     parser.add_argument("--ancho", type=int, default=1, help="Multiplica los filtros de la red")
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--semilla", type=int, default=2026)
@@ -97,9 +99,9 @@ def main() -> None:
         parser.error("--epocas, --batch-size y --ancho deben ser positivos")
 
     fuente = ROOT / "data/train_90k.npz"
-    examen = ROOT / "data/val_examen.npz"
+    examen = ROOT / args.archivo_examen
     if args.elegir_epoca == "examen" and not examen.is_file():
-        parser.error("Falta data/val_examen.npz: créalo con scripts/calibrar_simulador.py --guardar-val")
+        parser.error(f"Falta {args.archivo_examen}: créalo con scripts/calibrar_simulador.py --guardar-val")
     datos = dict(np.load(fuente))
     total = len(datos["labels"])
     if not 80 <= args.muestras <= total:
@@ -168,7 +170,7 @@ def main() -> None:
             series, niveles = [], []
             for inicio in range(0, len(entrenamiento_idx), 10_000):
                 bloque = entrenamiento_idx[inicio:inicio + 10_000]
-                s, nv = simular_examen(datos["series"][bloque], rng, etiquetas=datos["labels"][bloque])
+                s, nv = simular_examen(datos["series"][bloque], rng)
                 series.append(s)
                 niveles.append(nv)
             serie_e, aux_e = preparar(datos, entrenamiento_idx, args.sin_atajos,
@@ -252,6 +254,7 @@ def main() -> None:
         "sin_atajos": args.sin_atajos,
         "equilibrar": args.equilibrar,
         "elegir_epoca": args.elegir_epoca,
+        "archivo_examen": args.archivo_examen if args.elegir_epoca == "examen" else None,
         "ancho": args.ancho,
         "lr": args.lr,
         "clases_entrenamiento": conteo.tolist(),

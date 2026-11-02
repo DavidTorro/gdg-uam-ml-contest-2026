@@ -3,7 +3,9 @@
 Calcula rasgos sencillos de cada muestra (ruido, picos, huecos, relaciones entre
 canales...) en train, en train simulado y en el demo, y guarda un informe JSON que
 dibuja la sección Simulador del dashboard. No entrena ni evalúa ningún modelo.
-Con --guardar-val crea además data/val_examen.npz: val_10k pasado por el simulador.
+El parecido global se mide sin mezclas (como val_examen) y las trampas con mezclas (como
+al entrenar). Con --guardar-val crea data/val_examen_v2.npz: val_10k pasado por el
+simulador sin mezclas.
 """
 
 from __future__ import annotations
@@ -79,7 +81,6 @@ def main() -> None:
     parser.add_argument("--muestras", type=int, default=20_000)
     parser.add_argument("--semilla", type=int, default=2026)
     parser.add_argument("--guardar-val", action="store_true")
-    parser.add_argument("--sin-trasplantes", action="store_true", help="No cambia canales de las clases 3 y 6")
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.semilla)
@@ -90,18 +91,21 @@ def main() -> None:
     nivel_t = train["meta__level"][elegidos]
     y_t = train["labels"][elegidos]
     y_d = demo["labels"]
-    serie_s, nivel_s = simular_examen(serie_t, rng, etiquetas=None if args.sin_trasplantes else y_t)
+    # Con mezclas, como al entrenar; sin mezclas, como val_examen y el test
+    serie_s, nivel_s = simular_examen(serie_t, rng)
+    serie_v, nivel_v = simular_examen(serie_t, np.random.default_rng(args.semilla), mezclas=False)
 
     f_t, info = rasgos(serie_t, nivel_t)
     f_s, _ = rasgos(serie_s, nivel_s)
+    f_v, _ = rasgos(serie_v, nivel_v)
     f_d, _ = rasgos(demo["series"], demo["meta__level"])
 
     # Parecido global: cuánto se separa cada conjunto del demo en cada rasgo
     d_train = efecto(f_t, f_d)
-    d_sim = efecto(f_s, f_d)
+    d_sim = efecto(f_v, f_d)
     globales = [{
         "clave": clave, "nombre": nombre, "grupo": grupo,
-        "mediana_train": float(np.median(f_t[:, i])), "mediana_simulado": float(np.median(f_s[:, i])),
+        "mediana_train": float(np.median(f_t[:, i])), "mediana_simulado": float(np.median(f_v[:, i])),
         "mediana_demo": float(np.median(f_d[:, i])),
         "distancia_train": float(abs(d_train[i])), "distancia_simulado": float(abs(d_sim[i])),
     } for i, (clave, nombre, grupo) in enumerate(info)]
@@ -179,11 +183,10 @@ def main() -> None:
 
     if args.guardar_val:
         val = np.load(ROOT / "data/val_10k.npz")
-        serie_v, nivel_v = simular_examen(val["series"], np.random.default_rng(args.semilla + 1),
-                                          etiquetas=None if args.sin_trasplantes else val["labels"])
+        serie_v, nivel_v = simular_examen(val["series"], np.random.default_rng(args.semilla + 1), mezclas=False)
         extra = {clave: val[clave] for clave in val.files if clave not in ("series", "meta__level")}
-        np.savez(ROOT / "data/val_examen.npz", series=serie_v, meta__level=nivel_v, **extra)
-        print("Guardado data/val_examen.npz")
+        np.savez(ROOT / "data/val_examen_v2.npz", series=serie_v, meta__level=nivel_v, **extra)
+        print("Guardado data/val_examen_v2.npz")
 
 
 if __name__ == "__main__":

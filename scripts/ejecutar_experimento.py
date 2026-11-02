@@ -39,8 +39,8 @@ def main() -> None:
     parser.add_argument("--equilibrar", action="store_true", help="CNN: todas las clases pesan igual")
     parser.add_argument("--ancho", type=int, default=1, help="CNN: multiplica los filtros de la red")
     parser.add_argument("--elegir-epoca", choices=("control", "examen"), default="control", help="CNN: cómo elegir la mejor época")
-    parser.add_argument("--validacion", choices=("val_10k", "val_examen"), default="val_10k",
-                        help="Archivo de la evaluación oficial; val_examen usa todo el archivo y 60 s")
+    parser.add_argument("--validacion", choices=("val_10k", "val_examen", "val_examen_v2"), default="val_10k",
+                        help="Archivo de la evaluación oficial; los val_examen usan todo el archivo y 60 s")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--max-muestras", type=int, default=1_000)
     parser.add_argument("--presupuesto-s", type=float, default=2.0)
@@ -87,7 +87,7 @@ def main() -> None:
 
     particion = ROOT / "experiments/particion_90_10_2026.json"
     validacion = ROOT / f"data/{args.validacion}.npz"
-    if args.validacion == "val_examen":
+    if args.validacion.startswith("val_examen"):
         # Mismo protocolo que results/examen_*: un archivo entero con el límite de 60 s del concurso
         args.max_muestras, args.presupuesto_s = 10_000_000, 60.0
     for ruta in (HARNESS, ROOT / "data/train_90k.npz", validacion, particion):

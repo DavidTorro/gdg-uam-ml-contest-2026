@@ -4,6 +4,10 @@ El fichero de entrenamiento trae pistas que el test no tiene (desplazamientos y 
 de canal ligados a la clase) y está más limpio que el test. Aquí se rompen esas pistas
 con cambios aleatorios iguales para todas las clases y se añade la suciedad medida en
 test_demo: ruido rápido, picos, cambios de volumen y huecos. No usa las etiquetas.
+
+Versión 2: la v1 (exp022) cambiaba canales de las clases 3 y 6 por los de otra muestra,
+y eso dejaba una huella que delataba esas clases. La v2 imita sus trampas en todas las
+clases por igual (mezclas), así dejan de distinguir ninguna clase.
 """
 
 from __future__ import annotations
@@ -33,37 +37,58 @@ PARAMETROS = {
     "huecos_por_canal": 0.56,
     "prob_hueco_largo": 0.25,
     "hueco_largo_max": 16,
+    # Mezclas de entrenamiento, iguales para todas las clases. Imitan las trampas de train:
+    # la clase 6 lleva una señal lenta común en los canales 1 y 2, y la clase 3 tiene
+    # cambiado el ritmo de los canales 2 y 3
+    "prob_comun_12": 0.5,
+    "comun_12_max": 0.9,
+    "prob_ritmo_23": 0.7,
+    "ritmo_23_max": 2.4,
 }
 
-# Canales cuya forma solo distingue la clase en train: en el demo se parecen a los del resto
-TRASPLANTES = {3: (2, 3), 6: (2,)}
+def mezclar(x: np.ndarray, rng: np.random.Generator, p: dict) -> np.ndarray:
+    """Aplica a muestras al azar de cualquier clase las mezclas que en train solo tienen la 3 y la 6"""
+    n, _, largo = x.shape
+    t = np.arange(largo)
 
+    # Señal lenta común en los canales 1 y 2: el canal 3 de otra muestra con volumen variable
+    elegidas = np.where(rng.random(n) < p["prob_comun_12"])[0]
+    if len(elegidas):
+        donante = np.nan_to_num(x[rng.integers(0, n, len(elegidas)), 3])
+        donante /= donante.std(axis=1, keepdims=True) + 1e-9
+        donante *= 1.0 + 0.5 * np.sin(2 * np.pi * rng.uniform(0.5, 2.0, (len(elegidas), 1)) * t / largo
+                                      + rng.uniform(0.0, 2 * np.pi, (len(elegidas), 1)))
+        with np.errstate(all="ignore"):
+            tamano = np.nan_to_num(np.nanstd(x[elegidas, 0], axis=1, keepdims=True), nan=1.0)
+        comun = donante * rng.uniform(0.3, p["comun_12_max"], (len(elegidas), 1)) * tamano
+        x[elegidas, 1] += comun
+        x[elegidas, 2] += comun
 
-def trasplantar(series: np.ndarray, etiquetas: np.ndarray, rng: np.random.Generator,
-                trasplantes: dict[int, tuple[int, ...]] = TRASPLANTES) -> np.ndarray:
-    """Cambia esos canales por los de una muestra al azar de otra clase. Sí usa etiquetas"""
-    x = np.array(series, copy=True)
-    for clase, canales in trasplantes.items():
-        destino = np.where(etiquetas == clase)[0]
-        otras = np.where(etiquetas != clase)[0]
-        if not len(destino) or not len(otras):
+    # Ritmo cambiado en los canales 2 y 3: inclina su espectro hacia lo lento o lo rápido
+    for canal in (2, 3):
+        elegidas = np.where(rng.random(n) < p["prob_ritmo_23"])[0]
+        if not len(elegidas):
             continue
-        origen = rng.choice(otras, len(destino))
-        for canal in canales:
-            x[destino, canal] = series[origen, canal]
+        senal = x[elegidas, canal]
+        faltan = ~np.isfinite(senal)
+        with np.errstate(all="ignore"):
+            tamano = np.nanstd(senal, axis=1, keepdims=True)
+        espectro = np.fft.rfft(np.where(faltan, 0.0, senal), axis=1)
+        frecuencias = np.arange(espectro.shape[1]) / espectro.shape[1]
+        inclinacion = rng.uniform(-p["ritmo_23_max"], p["ritmo_23_max"], (len(elegidas), 1))
+        nueva = np.fft.irfft(espectro * np.exp(inclinacion * (frecuencias - 0.25) * 4), n=largo, axis=1)
+        nueva *= np.nan_to_num(tamano, nan=1.0) / (nueva.std(axis=1, keepdims=True) + 1e-9)
+        x[elegidas, canal] = np.where(faltan, np.nan, nueva)
     return x
 
 
 def simular_examen(series: np.ndarray, rng: np.random.Generator,
-                   parametros: dict | None = None,
-                   etiquetas: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+                   parametros: dict | None = None, mezclas: bool = True) -> tuple[np.ndarray, np.ndarray]:
     """Recibe (N, 4, 256) con NaN y devuelve la serie simulada y su nuevo level.
 
-    Si se pasan etiquetas, también aplica los trasplantes de canal de TRASPLANTES.
+    mezclas solo es para entrenar: el test no las tiene y val_examen tampoco las lleva.
     """
     p = {**PARAMETROS, **(parametros or {})}
-    if etiquetas is not None:
-        series = trasplantar(series, etiquetas, rng)
     x = np.array(series, dtype=np.float64)
     n, canales, largo = x.shape
     t = np.arange(largo)
@@ -71,6 +96,8 @@ def simular_examen(series: np.ndarray, rng: np.random.Generator,
     # Quitamos el desplazamiento original, que en train depende de la clase
     with np.errstate(all="ignore"):
         x -= np.nanmean(x, axis=2, keepdims=True)
+    if mezclas:
+        x = mezclar(x, rng, p)
 
     # Tamaño aleatorio: rompe la pista de canales más grandes en ciertas clases
     ganancia = np.exp(rng.normal(p["ganancia_media"], p["ganancia_desv"], (n, 1, 1))
