@@ -24,7 +24,7 @@ def sha256(ruta: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--id", required=True, help="Identificador único, por ejemplo exp001")
+    parser.add_argument("--id", help="Identificador único, por ejemplo exp001")
     parser.add_argument("--muestras", type=int, default=5_000)
     parser.add_argument("--iteraciones", type=int, default=80)
     parser.add_argument("--runs", type=int, default=1)
@@ -32,10 +32,25 @@ def main() -> None:
     parser.add_argument("--presupuesto-s", type=float, default=2.0)
     args = parser.parse_args()
 
+    if args.id is None:
+        if len(sys.argv) > 1:
+            parser.error("Indica --id o ejecuta el script sin argumentos para abrir el menú")
+        from menu_entrenamiento import menu_entrenamiento
+
+        try:
+            seleccion = menu_entrenamiento()
+        except ValueError as error:
+            parser.error(str(error))
+        if seleccion is None:
+            print("Entrenamiento cancelado")
+            return
+        for campo, valor in seleccion.items():
+            setattr(args, campo, valor)
+
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", args.id):
         parser.error("--id debe usar letras minúsculas, números, guiones o guiones bajos")
-    if args.runs < 1 or args.max_muestras < 1 or args.presupuesto_s <= 0:
-        parser.error("--runs, --max-muestras y --presupuesto-s deben ser positivos")
+    if args.muestras < 8 or args.iteraciones < 1 or args.runs < 1 or args.max_muestras < 1 or args.presupuesto_s <= 0:
+        parser.error("--muestras debe ser al menos 8; los demás valores numéricos deben ser positivos")
 
     # Cada experimento conserva sus pesos y JSON oficiales propios
     carpeta = ROOT / "experiments" / args.id
