@@ -34,6 +34,13 @@ def main() -> None:
     parser.add_argument("--aumento-ritmo", action="store_true", help="Varía el ritmo de las copias ruidosas")
     parser.add_argument("--temporales", action="store_true", help="Añade características de tramos temporales")
     parser.add_argument("--extendidas", action="store_true", help="Añade características estadísticas y espectrales detalladas")
+    parser.add_argument("--simular-examen", action="store_true", help="CNN: pasa cada época por el simulador de examen")
+    parser.add_argument("--sin-atajos", action="store_true", help="CNN: anula medias y level en las auxiliares")
+    parser.add_argument("--equilibrar", action="store_true", help="CNN: todas las clases pesan igual")
+    parser.add_argument("--ancho", type=int, default=1, help="CNN: multiplica los filtros de la red")
+    parser.add_argument("--elegir-epoca", choices=("control", "examen"), default="control", help="CNN: cómo elegir la mejor época")
+    parser.add_argument("--validacion", choices=("val_10k", "val_examen"), default="val_10k",
+                        help="Archivo de la evaluación oficial; val_examen usa todo el archivo y 60 s")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--max-muestras", type=int, default=1_000)
     parser.add_argument("--presupuesto-s", type=float, default=2.0)
@@ -63,6 +70,9 @@ def main() -> None:
         parser.error("La CNN requiere al menos 80 muestras para separar control interno")
     if args.arquitectura == "cnn" and (args.aumento_ritmo or args.temporales or args.extendidas):
         parser.error("--aumento-ritmo, --temporales y --extendidas solo se usan con histgb")
+    if args.arquitectura != "cnn" and (args.simular_examen or args.sin_atajos or args.equilibrar or args.ancho != 1
+                                       or args.elegir_epoca != "control"):
+        parser.error("--simular-examen, --sin-atajos, --equilibrar, --ancho y --elegir-epoca solo se usan con cnn")
     if args.aumento_ritmo and not args.aumento_ruido:
         parser.error("--aumento-ritmo requiere --aumento-ruido")
 
@@ -76,7 +86,10 @@ def main() -> None:
             parser.error(f"Ya existe {ruta}; elige otro --id para no sobrescribir el historial")
 
     particion = ROOT / "experiments/particion_90_10_2026.json"
-    validacion = ROOT / "data/val_10k.npz"
+    validacion = ROOT / f"data/{args.validacion}.npz"
+    if args.validacion == "val_examen":
+        # Mismo protocolo que results/examen_*: un archivo entero con el límite de 60 s del concurso
+        args.max_muestras, args.presupuesto_s = 10_000_000, 60.0
     for ruta in (HARNESS, ROOT / "data/train_90k.npz", validacion, particion):
         if not ruta.is_file():
             parser.error(f"Falta {ruta}")
@@ -89,9 +102,12 @@ def main() -> None:
         "--id", args.id, "--muestras", str(args.muestras),
     ]
     if args.arquitectura == "cnn":
-        entrenamiento += ["--epocas", str(args.epocas), "--batch-size", str(args.batch_size)]
-        if args.aumento_ruido:
-            entrenamiento.append("--aumento-ruido")
+        entrenamiento += ["--epocas", str(args.epocas), "--batch-size", str(args.batch_size),
+                          "--ancho", str(args.ancho), "--elegir-epoca", args.elegir_epoca]
+        for activo, opcion in ((args.aumento_ruido, "--aumento-ruido"), (args.simular_examen, "--simular-examen"),
+                               (args.sin_atajos, "--sin-atajos"), (args.equilibrar, "--equilibrar")):
+            if activo:
+                entrenamiento.append(opcion)
     else:
         entrenamiento += ["--iteraciones", str(args.iteraciones)]
         if args.aumento_ruido:
@@ -119,9 +135,14 @@ def main() -> None:
             "aumento_ritmo": args.aumento_ritmo,
             "temporales": args.temporales,
             "extendidas": args.extendidas,
+            "simular_examen": args.simular_examen,
+            "sin_atajos": args.sin_atajos,
+            "equilibrar": args.equilibrar,
+            "ancho": args.ancho,
+            "elegir_epoca": args.elegir_epoca,
         },
         "evaluacion": {
-            "source": "file:data/val_10k.npz",
+            "source": f"file:data/{args.validacion}.npz",
             "runs": args.runs,
             "max_scored_samples": args.max_muestras,
             "time_budget_s": args.presupuesto_s,
@@ -136,6 +157,7 @@ def main() -> None:
             "src/caracteristicas.py" if args.arquitectura == "histgb" else "src/red_convolucional.py":
                 sha256(ROOT / "src" / ("caracteristicas.py" if args.arquitectura == "histgb" else "red_convolucional.py")),
             f"scripts/{script_entrenamiento}": sha256(ROOT / "scripts" / script_entrenamiento),
+            "src/simulador.py": sha256(ROOT / "src/simulador.py"),
             "harness.py": sha256(HARNESS),
             "pesos": sha256(pesos),
         },
@@ -152,7 +174,7 @@ def main() -> None:
     evaluacion = [
         sys.executable, str(HARNESS), "evaluate",
         "--model", "model.py",
-        "--source", "file:data/val_10k.npz",
+        "--source", f"file:data/{args.validacion}.npz",
         "--runs", str(args.runs),
         "--out", str(salida),
         "--set", f"max_scored_samples={args.max_muestras}",

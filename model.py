@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pickle
 import os
 from pathlib import Path
@@ -30,11 +31,26 @@ class Model:
             artefacto = torch.load(pesos, map_location="cpu", weights_only=True)
             if artefacto.get("formato") != "gdg-cnn-v1":
                 raise ValueError(f"Formato de pesos CNN desconocido: {ruta}")
-            self.red = RedConvolucional()
+            # Los pesos desde exp022 guardan su ancho y si se entrenaron sin las auxiliares tramposas
+            self.red = RedConvolucional(ancho=int(artefacto.get("ancho", 1)))
             self.red.load_state_dict(artefacto["state_dict"])
             self.red.eval()
             self.torch = torch
             self.preparar_muestra = preparar_muestra
+            self.sin_atajos = bool(artefacto.get("sin_atajos", False))
+
+            # Sesgo opcional que se suma a la salida de la red antes de elegir clase
+            # Lo calcula scripts/calibrar_sesgo.py; sin GDG_SESGO_PATH la red no cambia
+            self.sesgo = None
+            ruta_sesgo = os.environ.get("GDG_SESGO_PATH")
+            if ruta_sesgo:
+                fichero = ROOT / ruta_sesgo
+                if Path(ruta_sesgo).is_absolute() or not fichero.is_file():
+                    raise FileNotFoundError(f"No se encuentra el sesgo: {ruta_sesgo}")
+                datos = json.loads(fichero.read_text(encoding="utf-8"))
+                if datos.get("formato") != "gdg-sesgo-v1" or len(datos["sesgo"]) != 8:
+                    raise ValueError(f"Formato de sesgo desconocido: {ruta_sesgo}")
+                self.sesgo = torch.tensor(datos["sesgo"], dtype=torch.float32)
             return
         with pesos.open("rb") as file:
             artefacto = pickle.load(file)
@@ -50,12 +66,14 @@ class Model:
     def predict(self, x: Sample) -> int:
         # El evaluador cronometra esta llamada para una muestra cada vez
         if self.red is not None:
-            serie, auxiliares = self.preparar_muestra(x)
+            serie, auxiliares = self.preparar_muestra(x, sin_atajos=self.sin_atajos)
             with self.torch.inference_mode():
                 salida = self.red(
                     self.torch.from_numpy(serie[None, ...]),
                     self.torch.from_numpy(auxiliares[None, ...]),
                 )
+                if self.sesgo is not None:
+                    salida = salida + self.sesgo
             return int(salida.argmax(dim=1).item())
         vector = extraer(x, temporales=self.temporales, extendidas=self.extendidas).reshape(1, -1)
         prediccion = self.clasificador.predict(vector)[0]
