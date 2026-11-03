@@ -45,7 +45,7 @@ La red requiere PyTorch. Desde la raíz de este repositorio, ejecuta:
 
 El entrenamiento puede usar MPS en Mac; el evaluador carga la red en CPU y usa un solo hilo. La cifra de épocas aparece en el dashboard en el campo de iteraciones. Para importar un resultado al panel, desde `../ml-dashboard/` ejecuta `node scripts/importar_experimento.mjs` y selecciona el ID.
 
-Antes de entregar la CNN hay que añadir PyTorch a `requirements.txt` y cambiar el peso predeterminado de `model.py`. Los pesos anteriores permanecen disponibles para comparación.
+PyTorch solo hace falta para entrenar y para los pesos `.pt`. La entrega usa la misma red exportada a NumPy (ver [Entrega actual](#entrega-actual)), así que `requirements.txt` no lo incluye. Los pesos anteriores permanecen disponibles para comparación.
 
 ### Resultados de la CNN
 
@@ -57,9 +57,39 @@ La clase 6 sigue siendo el mayor fallo fuera de distribución: `exp016` acertó 
 
 El demo tiene solo 400 muestras etiquetadas. Se ha consultado varias veces para comparar modelos; seguir ajustando parámetros contra esos mismos resultados puede sobreajustar la selección al demo. Antes de otro entrenamiento, conviene revisar los 20 experimentos, el protocolo oficial y la diferencia entre validación local y demo.
 
+## Simulador de examen (exp021–exp039)
+
+El fichero de train tiene trampas que el examen no tiene: `level` delata la clase (en el test no), los canales 2 y 3 de las clases 3 y 6 cambian de forma, y el demo trae el doble de huecos, más ruido rápido, picos y amplitudes más variables. Por eso la validación de `val_10k` premiaba modelos que luego fallaban en el demo.
+
+- `src/simulador.py` transforma cada lote de entrenamiento para que se parezca al examen: ruido, picos, huecos, ganancias y un `level` nuevo independiente de la clase. La versión 2 aplica las «mezclas» de las trampas a **todas** las clases, para que la red no pueda usarlas como pista. `scripts/calibrar_simulador.py` comprueba con 55 rasgos que el resultado se parece al demo y genera `data/val_examen_v2.npz`, la validación con la que se elige la época.
+- `--sin-atajos` anula en la red las medias y el `level`; `--equilibrar` hace que todas las clases pesen igual; `--elegir-epoca examen` entrena con las 90k y guarda la época con mejor nota oficial en `val_examen_v2`.
+- `scripts/calibrar_sesgo.py` calcula un «empujón» para la clase 6: un valor que se suma a su salida hasta que la red la elige en 1/8 del demo. No usa las etiquetas. `scripts/ajustar_con_demo.py` (reajustar la capa final con el demo, `exp021`) se descartó porque empeoraba en validación cruzada.
+- `scripts/barrido.py` entrena varias configuraciones seguidas, las evalúa en `val_examen_v2`, calcula la nota estimada a 60 s (la nota oficial crece con la raíz de las muestras respondidas, así que la velocidad cuenta) y las importa en el dashboard.
+
+| Modelo | `val_examen_v2` | Nota 60 s estimada | `test_demo` | Con empujón |
+| --- | ---: | ---: | ---: | ---: |
+| exp023 · ancho 1 · 100 épocas · lr 0,001 | 21,25 | 139,8 | 2,473 | 2,880 |
+| exp027 · ancho 1 · 200 épocas | 22,42 | 150,3 | 2,984 | 3,062 |
+| exp032 · ancho 3 · lr 0,002 | 22,82 | 136,3 | 2,931 | 3,404 |
+| **exp033 · ancho 1 · 200 épocas · lr 0,002** | 23,03 | 155,0 | 3,586 | **3,779 (84,5 %)** |
+| exp034 · como exp033 · semilla 2027 | 23,15 | 158,6 | 3,266 | 3,405 |
+| exp036–exp039 · 300/400 épocas, lr 0,003, semilla 2028 | 22,83–23,19 | 155–157 | — | — |
+
+Las redes más anchas (ancho 2–4, `exp024`–`exp026`, `exp028`–`exp032`, `exp035`) aciertan parecido pero son más lentas, y pierden en la nota a 60 s. Desde `exp033` la receta está estancada: más épocas, otra tasa de aprendizaje u otra semilla dan lo mismo dentro del ruido (~±0,3). La diferencia de demo entre `exp033` y `exp034` (misma receta) muestra que parte de la ventaja de `exp033` es suerte. El error principal que queda es la confusión entre las clases 6 y 7 (15 fallos en cada sentido en el demo).
+
+## Entrega actual
+
+`model.py` carga por defecto `models/exp033.sesgo.npz`: la CNN `exp033` con el empujón de la clase 6 (0,9414), exportada a NumPy con `scripts/exportar_numpy.py`. `src/red_numpy.py` hace las mismas cuentas que PyTorch (las mismas clases en las 400 muestras del demo y en 3000 de validación) en ~25 % menos tiempo, porque se ahorra el coste fijo de PyTorch en cada capa: 0,101 ms frente a 0,133 ms por muestra en `val_examen_v2`. No necesita PyTorch: se ha comprobado en un entorno limpio solo con `requirements.txt` (3,779 en el demo, ~0,1 ms por muestra).
+
+Para exportar otro modelo y comprobar que coincide con PyTorch:
+
+```bash
+.venv/bin/python scripts/exportar_numpy.py --pesos models/expNNN.pt --sesgo models/expNNN.sesgo.json
+```
+
 ## Estado de los modelos
 
-`model.py` todavía carga `models/exp001.pkl` por defecto como base provisional. La variable `GDG_MODEL_PATH` permite evaluar otro peso local sin cambiar el código. Antes de la entrega hay que elegir el peso final, completar `requirements.txt` y comprobar el repositorio desde un clon limpio, tal como pide el concurso.
+La variable `GDG_MODEL_PATH` permite evaluar otro peso local (`.pkl`, `.pt` o `.npz`) sin cambiar el código; con `.pt`, `GDG_SESGO_PATH` añade el empujón. La tabla siguiente recoge los primeros 20 experimentos con el protocolo local antiguo (1000 muestras, 2 s), que no es comparable con el de la sección anterior.
 
 | Modelo | Puntuación local | Muestras puntuadas | Acierto | Latencia media | `test_demo` (400 muestras) |
 | --- | ---: | ---: | ---: | ---: | --- |

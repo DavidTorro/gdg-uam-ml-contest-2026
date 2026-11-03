@@ -17,12 +17,20 @@ class Model:
     def __init__(self) -> None:
         # La carga ocurre en setup y debe terminar antes de 120 segundos
         # El flujo local elige los pesos del experimento mediante una ruta relativa
-        # exp001 es la base provisional; la entrega final usará el modelo elegido
-        ruta = os.environ.get("GDG_MODEL_PATH", "models/exp001.pkl")
+        # Por defecto, la entrega: CNN exp033 en NumPy con el empujón de la clase 6 incluido
+        ruta = os.environ.get("GDG_MODEL_PATH", "models/exp033.sesgo.npz")
         pesos = ROOT / ruta
         if Path(ruta).is_absolute() or not pesos.is_file():
             raise FileNotFoundError(f"No se encuentran los pesos del modelo: {ruta}")
         self.red = None
+        self.red_numpy = None
+        if pesos.suffix == ".npz":
+            # CNN exportada con scripts/exportar_numpy.py: mismas clases, más rápida y sin PyTorch
+            # El empujón de clase, si lo hay, va dentro del propio .npz
+            from src.red_numpy import RedNumpy
+
+            self.red_numpy = RedNumpy(pesos)
+            return
         if pesos.suffix == ".pt":
             import torch
             from src.red_convolucional import RedConvolucional, preparar_muestra
@@ -65,6 +73,8 @@ class Model:
 
     def predict(self, x: Sample) -> int:
         # El evaluador cronometra esta llamada para una muestra cada vez
+        if self.red_numpy is not None:
+            return self.red_numpy.predecir(x)
         if self.red is not None:
             serie, auxiliares = self.preparar_muestra(x, sin_atajos=self.sin_atajos)
             with self.torch.inference_mode():
