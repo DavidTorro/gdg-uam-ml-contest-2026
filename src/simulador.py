@@ -44,6 +44,10 @@ PARAMETROS = {
     "comun_12_max": 0.9,
     "prob_ritmo_23": 0.7,
     "ritmo_23_max": 2.4,
+    # Experimentos nuevos: el ritmo del canal 0 también delata 6/7 en train.
+    # Probabilidad cero conserva exactamente el simulador v2 por defecto.
+    "prob_ritmo_0": 0.0,
+    "ritmo_0_max": 2.4,
 }
 
 def mezclar(x: np.ndarray, rng: np.random.Generator, p: dict) -> np.ndarray:
@@ -98,6 +102,22 @@ def simular_examen(series: np.ndarray, rng: np.random.Generator,
         x -= np.nanmean(x, axis=2, keepdims=True)
     if mezclas:
         x = mezclar(x, rng, p)
+
+    # Variación opcional del espectro del canal 0, independiente de la clase.
+    # Se aplica también a la validación simulada cuando se activa explícitamente.
+    if p["prob_ritmo_0"] > 0:
+        elegidas = np.where(rng.random(n) < p["prob_ritmo_0"])[0]
+        if len(elegidas):
+            senal = x[elegidas, 0]
+            faltan = ~np.isfinite(senal)
+            with np.errstate(all="ignore"):
+                tamano = np.nanstd(senal, axis=1, keepdims=True)
+            espectro = np.fft.rfft(np.where(faltan, 0.0, senal), axis=1)
+            frecuencias = np.arange(espectro.shape[1]) / espectro.shape[1]
+            inclinacion = rng.uniform(-p["ritmo_0_max"], p["ritmo_0_max"], (len(elegidas), 1))
+            nueva = np.fft.irfft(espectro * np.exp(inclinacion * (frecuencias - 0.25) * 4), n=largo, axis=1)
+            nueva *= np.nan_to_num(tamano, nan=1.0) / (nueva.std(axis=1, keepdims=True) + 1e-9)
+            x[elegidas, 0] = np.where(faltan, np.nan, nueva)
 
     # Tamaño aleatorio: rompe la pista de canales más grandes en ciertas clases
     ganancia = np.exp(rng.normal(p["ganancia_media"], p["ganancia_desv"], (n, 1, 1))

@@ -1,0 +1,16 @@
+{
+  "formato": "gdg-sesgo-v1",
+  "pesos": "models/exp040.pt",
+  "datos": "data/test_demo.npz",
+  "clase": 6,
+  "sesgo": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.9007,
+    0.0
+  ]
+}

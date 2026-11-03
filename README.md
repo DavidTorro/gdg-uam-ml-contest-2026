@@ -74,8 +74,11 @@ El fichero de train tiene trampas que el examen no tiene: `level` delata la clas
 | **exp033 · ancho 1 · 200 épocas · lr 0,002** | 23,03 | 155,0 | 3,586 | **3,779 (84,5 %)** |
 | exp034 · como exp033 · semilla 2027 | 23,15 | 158,6 | 3,266 | 3,405 |
 | exp036–exp039 · 300/400 épocas, lr 0,003, semilla 2028 | 22,83–23,19 | 155–157 | — | — |
+| exp040 · exp033 + ritmo variable en canal 0 | 22,63 | — | — | 3,520 (83,25 %) |
 
 Las redes más anchas (ancho 2–4, `exp024`–`exp026`, `exp028`–`exp032`, `exp035`) aciertan parecido pero son más lentas, y pierden en la nota a 60 s. Desde `exp033` la receta está estancada: más épocas, otra tasa de aprendizaje u otra semilla dan lo mismo dentro del ruido (~±0,3). La diferencia de demo entre `exp033` y `exp034` (misma receta) muestra que parte de la ventaja de `exp033` es suerte. El error principal que queda es la confusión entre las clases 6 y 7 (15 fallos en cada sentido en el demo).
+
+`exp040` añadió variación del ritmo del canal 0 durante el entrenamiento. Mejoró la prueba de estrés creada para ese cambio, pero bajó a 3,520 en el demo: la clase 6 subió de 64 % a 66 % y la 7 cayó de 64 % a 56 %. Se conserva `exp033`. Las decisiones y los descartes están en [`docs/engram.md`](docs/engram.md); los JSON de evaluación permanecen fuera de Git.
 
 ## Entrega actual
 
