@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from numpy.lib.stride_tricks import as_strided
 
 from competition_api import Sample
 
@@ -100,8 +99,10 @@ class RedNumpy:
             con_relleno[relleno:relleno + largo] = x
             posiciones = (largo + 2 * relleno - ventana) // 2 + 1
             paso_fila, paso_canal = con_relleno.strides
-            ventanas = as_strided(con_relleno, (posiciones, ventana, canales),
-                                  (2 * paso_fila, paso_fila, paso_canal)).reshape(posiciones, ventana * canales)
+            # La ventana siempre cabe en el buffer; evitamos el coste de as_strided en cada capa.
+            ventanas = np.ndarray((posiciones, ventana, canales), dtype=np.float32,
+                                  buffer=con_relleno,
+                                  strides=(2 * paso_fila, paso_fila, paso_canal)).reshape(posiciones, ventana * canales)
             x = ventanas @ matriz
             x += sesgo
             np.maximum(x, 0.0, out=x)
