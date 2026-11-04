@@ -36,6 +36,7 @@ def main() -> None:
         raise ValueError(f"Formato de pesos CNN desconocido: {args.pesos}")
     ancho = int(artefacto.get("ancho", 1))
     sin_atajos = bool(artefacto.get("sin_atajos", False))
+    sin_escala = bool(artefacto.get("sin_escala", False))
     sesgo = np.zeros(8, dtype=np.float32)
     if args.sesgo:
         datos = json.loads((ROOT / args.sesgo).read_text(encoding="utf-8"))
@@ -45,7 +46,7 @@ def main() -> None:
 
     destino = ROOT / (args.destino or args.pesos.replace(".pt", ".sesgo.npz" if args.sesgo else ".npz"))
     np.savez(destino, formato=np.array("gdg-numpy-v1"), origen=np.array(args.pesos), ancho=np.array(ancho),
-             sin_atajos=np.array(sin_atajos), sesgo=sesgo,
+             sin_atajos=np.array(sin_atajos), sin_escala=np.array(sin_escala), sesgo=sesgo,
              **{clave: tensor.numpy() for clave, tensor in artefacto["state_dict"].items()})
     print(f"Guardado {destino.relative_to(ROOT)} · ancho {ancho} · sin atajos {sin_atajos} · sesgo {sesgo.tolist()}")
 
@@ -57,7 +58,7 @@ def main() -> None:
     sesgo_torch = torch.from_numpy(sesgo)
 
     def con_torch(muestra) -> int:
-        serie, auxiliares = preparar_muestra(muestra, sin_atajos=sin_atajos)
+        serie, auxiliares = preparar_muestra(muestra, sin_atajos=sin_atajos, sin_escala=sin_escala)
         with torch.inference_mode():
             salida = red(torch.from_numpy(serie[None]), torch.from_numpy(auxiliares[None])) + sesgo_torch
         return int(salida.argmax(dim=1).item())

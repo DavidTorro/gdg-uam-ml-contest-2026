@@ -46,6 +46,7 @@ class Model:
             self.torch = torch
             self.preparar_muestra = preparar_muestra
             self.sin_atajos = bool(artefacto.get("sin_atajos", False))
+            self.sin_escala = bool(artefacto.get("sin_escala", False))
 
             # Sesgo opcional que se suma a la salida de la red antes de elegir clase
             # Lo calcula scripts/calibrar_sesgo.py; sin GDG_SESGO_PATH la red no cambia
@@ -76,7 +77,9 @@ class Model:
         if self.red_numpy is not None:
             return self.red_numpy.predecir(x)
         if self.red is not None:
-            serie, auxiliares = self.preparar_muestra(x, sin_atajos=self.sin_atajos)
+            serie, auxiliares = self.preparar_muestra(
+                x, sin_atajos=self.sin_atajos, sin_escala=self.sin_escala
+            )
             with self.torch.inference_mode():
                 salida = self.red(
                     self.torch.from_numpy(serie[None, ...]),

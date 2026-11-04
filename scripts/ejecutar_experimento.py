@@ -36,7 +36,12 @@ def main() -> None:
     parser.add_argument("--extendidas", action="store_true", help="Añade características estadísticas y espectrales detalladas")
     parser.add_argument("--simular-examen", action="store_true", help="CNN: pasa cada época por el simulador de examen")
     parser.add_argument("--sin-atajos", action="store_true", help="CNN: anula medias y level en las auxiliares")
+    parser.add_argument("--sin-escala", action="store_true", help="CNN: anula tamaños de canal en las auxiliares")
+    parser.add_argument("--prob-escala-cero", type=float, default=0.0,
+                        help="CNN: probabilidad de ocultar tamaños de canal durante entrenamiento")
     parser.add_argument("--equilibrar", action="store_true", help="CNN: todas las clases pesan igual")
+    parser.add_argument("--peso-clase-6", type=float, default=1.0,
+                        help="CNN: multiplica el peso de la clase 6 sobre el equilibrio")
     parser.add_argument("--ancho", type=int, default=1, help="CNN: multiplica los filtros de la red")
     parser.add_argument("--elegir-epoca", choices=("control", "examen"), default="control", help="CNN: cómo elegir la mejor época")
     parser.add_argument("--lr", type=float, default=0.001, help="CNN: tasa de aprendizaje")
@@ -71,9 +76,15 @@ def main() -> None:
         parser.error("--muestras debe ser al menos 8; los demás valores numéricos deben ser positivos")
     if args.arquitectura == "cnn" and args.muestras < 80:
         parser.error("La CNN requiere al menos 80 muestras para separar control interno")
+    if not 0.0 <= args.prob_escala_cero <= 1.0:
+        parser.error("--prob-escala-cero debe estar entre 0 y 1")
+    if args.sin_escala and args.prob_escala_cero:
+        parser.error("--sin-escala y --prob-escala-cero no se pueden combinar")
+    if args.peso_clase_6 <= 0 or (args.peso_clase_6 != 1.0 and not args.equilibrar):
+        parser.error("--peso-clase-6 debe ser positivo y requiere --equilibrar si cambia de 1")
     if args.arquitectura == "cnn" and (args.aumento_ritmo or args.temporales or args.extendidas):
         parser.error("--aumento-ritmo, --temporales y --extendidas solo se usan con histgb")
-    if args.arquitectura != "cnn" and (args.simular_examen or args.sin_atajos or args.equilibrar or args.ancho != 1
+    if args.arquitectura != "cnn" and (args.simular_examen or args.sin_atajos or args.sin_escala or args.prob_escala_cero or args.equilibrar or args.peso_clase_6 != 1.0 or args.ancho != 1
                                        or args.elegir_epoca != "control"):
         parser.error("--simular-examen, --sin-atajos, --equilibrar, --ancho y --elegir-epoca solo se usan con cnn")
     if args.aumento_ritmo and not args.aumento_ruido:
@@ -108,9 +119,12 @@ def main() -> None:
         entrenamiento += ["--epocas", str(args.epocas), "--batch-size", str(args.batch_size),
                           "--ancho", str(args.ancho), "--elegir-epoca", args.elegir_epoca,
                           "--lr", str(args.lr), "--semilla", str(args.semilla),
+                          "--prob-escala-cero", str(args.prob_escala_cero),
+                          "--peso-clase-6", str(args.peso_clase_6),
                           "--ajustes-simulador", args.ajustes_simulador]
         for activo, opcion in ((args.aumento_ruido, "--aumento-ruido"), (args.simular_examen, "--simular-examen"),
-                               (args.sin_atajos, "--sin-atajos"), (args.equilibrar, "--equilibrar")):
+                               (args.sin_atajos, "--sin-atajos"), (args.sin_escala, "--sin-escala"),
+                               (args.equilibrar, "--equilibrar")):
             if activo:
                 entrenamiento.append(opcion)
     else:
@@ -142,6 +156,9 @@ def main() -> None:
             "extendidas": args.extendidas,
             "simular_examen": args.simular_examen,
             "sin_atajos": args.sin_atajos,
+            "sin_escala": args.sin_escala,
+            "prob_escala_cero": args.prob_escala_cero,
+            "peso_clase_6": args.peso_clase_6,
             "equilibrar": args.equilibrar,
             "ancho": args.ancho,
             "elegir_epoca": args.elegir_epoca,

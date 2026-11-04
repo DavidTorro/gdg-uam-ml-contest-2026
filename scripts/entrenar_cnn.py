@@ -58,7 +58,8 @@ def nota_oficial(confusion: np.ndarray) -> float:
     return float(np.exp(np.log(np.maximum(0.01, t)).mean()))
 
 
-def preparar(datos: dict, indices: np.ndarray, sin_atajos: bool, series: np.ndarray | None = None,
+def preparar(datos: dict, indices: np.ndarray, sin_atajos: bool, sin_escala: bool = False,
+             series: np.ndarray | None = None,
              nivel: np.ndarray | None = None) -> tuple[torch.Tensor, torch.Tensor]:
     """Prepara señales y auxiliares en bloques para no disparar la memoria"""
     partes_s, partes_a = [], []
@@ -68,7 +69,7 @@ def preparar(datos: dict, indices: np.ndarray, sin_atajos: bool, series: np.ndar
             datos["series"][bloque] if series is None else series[inicio:inicio + 20_000],
             datos["meta__sample_rate"][bloque],
             datos["meta__level"][bloque] if nivel is None else nivel[inicio:inicio + 20_000],
-            datos["meta__group"][bloque], sin_atajos=sin_atajos,
+            datos["meta__group"][bloque], sin_atajos=sin_atajos, sin_escala=sin_escala,
         )
         partes_s.append(s)
         partes_a.append(a)
@@ -84,7 +85,12 @@ def main() -> None:
     parser.add_argument("--aumento-ruido", action="store_true", help="Añade ruido y huecos nuevos a los lotes de entrenamiento")
     parser.add_argument("--simular-examen", action="store_true", help="Pasa cada época por el simulador de examen")
     parser.add_argument("--sin-atajos", action="store_true", help="Anula las medias y el level en las auxiliares")
+    parser.add_argument("--sin-escala", action="store_true", help="Anula los tamaños de canal en las auxiliares")
+    parser.add_argument("--prob-escala-cero", type=float, default=0.0,
+                        help="Probabilidad de ocultar los tamaños de canal por muestra solo durante el entrenamiento")
     parser.add_argument("--equilibrar", action="store_true", help="Todas las clases pesan igual en la pérdida")
+    parser.add_argument("--peso-clase-6", type=float, default=1.0,
+                        help="Multiplicador adicional de la clase 6 sobre los pesos equilibrados")
     parser.add_argument("--elegir-epoca", choices=("control", "examen"), default="control",
                         help="control: menor pérdida en el 10 %% interno; examen: mejor nota en --archivo-examen")
     parser.add_argument("--archivo-examen", default="data/val_examen_v2.npz",
@@ -106,6 +112,12 @@ def main() -> None:
         parser.error("--id debe usar letras minúsculas, números, guiones o guiones bajos")
     if args.epocas < 1 or args.batch_size < 1 or args.ancho < 1:
         parser.error("--epocas, --batch-size y --ancho deben ser positivos")
+    if not 0.0 <= args.prob_escala_cero <= 1.0:
+        parser.error("--prob-escala-cero debe estar entre 0 y 1")
+    if args.sin_escala and args.prob_escala_cero:
+        parser.error("--sin-escala y --prob-escala-cero no se pueden combinar")
+    if args.peso_clase_6 <= 0 or (args.peso_clase_6 != 1.0 and not args.equilibrar):
+        parser.error("--peso-clase-6 debe ser positivo y requiere --equilibrar si cambia de 1")
 
     fuente = ROOT / "data/train_90k.npz"
     examen = ROOT / args.archivo_examen
@@ -143,16 +155,16 @@ def main() -> None:
     inicio_total = perf_counter()
     if args.elegir_epoca == "control":
         control_idx = indices[np.sort(control_pos)]
-        control_s, control_a = preparar(datos, control_idx, args.sin_atajos)
+        control_s, control_a = preparar(datos, control_idx, args.sin_atajos, args.sin_escala)
         control_y = torch.from_numpy(np.asarray(datos["labels"][control_idx], dtype=np.int64))
         nombre_control = "control interno"
     else:
         datos_examen = dict(np.load(examen))
         todos = np.arange(len(datos_examen["labels"]))
-        control_s, control_a = preparar(datos_examen, todos, args.sin_atajos)
+        control_s, control_a = preparar(datos_examen, todos, args.sin_atajos, args.sin_escala)
         control_y = torch.from_numpy(np.asarray(datos_examen["labels"], dtype=np.int64))
         nombre_control = "examen de prácticas"
-    fijas = None if args.simular_examen else preparar(datos, entrenamiento_idx, args.sin_atajos)
+    fijas = None if args.simular_examen else preparar(datos, entrenamiento_idx, args.sin_atajos, args.sin_escala)
     segundos_preparacion = perf_counter() - inicio_total
 
     dispositivo = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -161,6 +173,8 @@ def main() -> None:
     plan = torch.optim.lr_scheduler.CosineAnnealingLR(optimizador, T_max=args.epocas)
     conteo = np.bincount(etiquetas, minlength=8)
     pesos_clase = torch.tensor(len(etiquetas) / (8 * conteo), dtype=torch.float32, device=dispositivo) if args.equilibrar else None
+    if pesos_clase is not None:
+        pesos_clase[6] *= args.peso_clase_6
     criterio = nn.CrossEntropyLoss(weight=pesos_clase)
     criterio_control = nn.CrossEntropyLoss()
     mejor = {"epoca": 0, "perdida": float("inf"), "nota": -1.0}
@@ -182,7 +196,7 @@ def main() -> None:
                 s, nv = simular_examen(datos["series"][bloque], rng, parametros=ajustes)
                 series.append(s)
                 niveles.append(nv)
-            serie_e, aux_e = preparar(datos, entrenamiento_idx, args.sin_atajos,
+            serie_e, aux_e = preparar(datos, entrenamiento_idx, args.sin_atajos, args.sin_escala,
                                       series=np.concatenate(series), nivel=np.concatenate(niveles))
             segundos_simulador += perf_counter() - antes
         else:
@@ -196,6 +210,10 @@ def main() -> None:
             serie = serie.to(dispositivo)
             auxiliar = auxiliar.to(dispositivo)
             etiqueta = etiqueta.to(dispositivo)
+            if args.prob_escala_cero:
+                auxiliar = auxiliar.clone()
+                ocultar = torch.rand(len(auxiliar), device=dispositivo) < args.prob_escala_cero
+                auxiliar[ocultar, 4:8] = 0.0
             if args.aumento_ruido:
                 serie, auxiliar = aumentar_senales(serie, auxiliar)
             optimizador.zero_grad(set_to_none=True)
@@ -248,7 +266,9 @@ def main() -> None:
     destino.parent.mkdir(exist_ok=True)
     torch.save({
         "formato": "gdg-cnn-v1", "state_dict": mejores_pesos,
-        "ancho": args.ancho, "sin_atajos": args.sin_atajos,
+        "ancho": args.ancho, "sin_atajos": args.sin_atajos, "sin_escala": args.sin_escala,
+        "prob_escala_cero": args.prob_escala_cero,
+        "peso_clase_6": args.peso_clase_6,
     }, destino)
     resumen = {
         "modelo": "Red convolucional 1D" + (" · simulador de examen" if args.simular_examen else ""),
@@ -261,6 +281,9 @@ def main() -> None:
         "simular_examen": args.simular_examen,
         "parametros_simulador": {**PARAMETROS, **ajustes} if args.simular_examen else None,
         "sin_atajos": args.sin_atajos,
+        "sin_escala": args.sin_escala,
+        "prob_escala_cero": args.prob_escala_cero,
+        "peso_clase_6": args.peso_clase_6,
         "equilibrar": args.equilibrar,
         "elegir_epoca": args.elegir_epoca,
         "archivo_examen": args.archivo_examen if args.elegir_epoca == "examen" else None,

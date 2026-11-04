@@ -18,7 +18,7 @@ TIEMPOS = np.arange(256)
 CONVOLUCIONES = [(9, 4), (7, 3), (5, 2), (3, 1)]
 
 
-def preparar_rapida(sample: Sample, sin_atajos: bool) -> tuple[np.ndarray, np.ndarray]:
+def preparar_rapida(sample: Sample, sin_atajos: bool, sin_escala: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """Igual que preparar_muestra, pero sin trabajo extra cuando un canal no tiene huecos"""
     serie = np.asarray(sample.series, dtype=np.float32)
     if serie.shape != (4, 256):
@@ -27,9 +27,12 @@ def preparar_rapida(sample: Sample, sin_atajos: bool) -> tuple[np.ndarray, np.nd
     if ausentes.any():
         completa = serie.copy()
         for canal in np.flatnonzero(ausentes.any(axis=1)):
-            presentes = ~ausentes[canal]
+            huecos = ausentes[canal]
+            presentes = ~huecos
             if presentes.any():
-                completa[canal] = np.interp(TIEMPOS, TIEMPOS[presentes], serie[canal, presentes])
+                completa[canal, huecos] = np.interp(
+                    TIEMPOS[huecos], TIEMPOS[presentes], serie[canal, presentes]
+                )
             else:
                 completa[canal] = 0.0
         faltan = ausentes.mean(axis=1)
@@ -47,6 +50,8 @@ def preparar_rapida(sample: Sample, sin_atajos: bool) -> tuple[np.ndarray, np.nd
     grupo = str(sample.meta.get("group", ""))
     auxiliares = np.zeros(17, dtype=np.float32)
     auxiliares[4:8] = np.log1p(desviaciones)
+    if sin_escala:
+        auxiliares[4:8] = 0.0
     auxiliares[8:12] = faltan
     auxiliares[12] = np.sign(tasa) * np.log1p(abs(tasa))
     if grupo in ("A", "B", "C"):
@@ -55,7 +60,8 @@ def preparar_rapida(sample: Sample, sin_atajos: bool) -> tuple[np.ndarray, np.nd
         nivel = float(sample.meta.get("level", 0.0))
         auxiliares[0:4] = np.arcsinh(medias)
         auxiliares[13] = np.sign(nivel) * np.log1p(abs(nivel))
-    auxiliares = np.nan_to_num(auxiliares, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+    if not np.isfinite(auxiliares).all():
+        auxiliares = np.nan_to_num(auxiliares, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
     return normalizada.astype(np.float32, copy=False), auxiliares
 
 
@@ -69,6 +75,7 @@ class RedNumpy:
             pesos = {clave: datos[clave].astype(np.float32) for clave in datos.files
                      if clave.startswith(("convoluciones.", "salida."))}
             self.sin_atajos = bool(datos["sin_atajos"])
+            self.sin_escala = bool(datos["sin_escala"]) if "sin_escala" in datos else False
             self.sesgo = datos["sesgo"].astype(np.float32)
 
         # Cada convolución pasa a una multiplicación de matrices sobre ventanas (posición, ventana·canal)
@@ -115,5 +122,5 @@ class RedNumpy:
         return oculto @ self.w2 + self.b2
 
     def predecir(self, sample: Sample) -> int:
-        serie, auxiliares = preparar_rapida(sample, self.sin_atajos)
+        serie, auxiliares = preparar_rapida(sample, self.sin_atajos, self.sin_escala)
         return int(self.salida(serie, auxiliares).argmax())

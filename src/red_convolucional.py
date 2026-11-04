@@ -12,7 +12,8 @@ from competition_api import Sample
 ATAJOS = [0, 1, 2, 3, 13]
 
 
-def preparar_muestra(sample: Sample, sin_atajos: bool = False) -> tuple[np.ndarray, np.ndarray]:
+def preparar_muestra(sample: Sample, sin_atajos: bool = False,
+                    sin_escala: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """Interpola huecos y devuelve la señal normalizada y sus datos auxiliares."""
     serie = np.asarray(sample.series, dtype=np.float32)
     if serie.shape != (4, 256):
@@ -43,11 +44,13 @@ def preparar_muestra(sample: Sample, sin_atajos: bool = False) -> tuple[np.ndarr
     auxiliares = np.nan_to_num(auxiliares, nan=0.0, posinf=0.0, neginf=0.0)
     if sin_atajos:
         auxiliares[ATAJOS] = 0.0
+    if sin_escala:
+        auxiliares[4:8] = 0.0
     return normalizada, auxiliares
 
 
 def preparar_lote(series: np.ndarray, tasa: np.ndarray, nivel: np.ndarray, grupo: np.ndarray,
-                  sin_atajos: bool = False) -> tuple[np.ndarray, np.ndarray]:
+                  sin_atajos: bool = False, sin_escala: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """Igual que preparar_muestra, pero para (N, 4, 256) de una vez; solo se usa al entrenar."""
     serie = np.asarray(series, dtype=np.float32)
     n, canales, largo = serie.shape
@@ -90,6 +93,8 @@ def preparar_lote(series: np.ndarray, tasa: np.ndarray, nivel: np.ndarray, grupo
     auxiliares = np.nan_to_num(auxiliares, nan=0.0, posinf=0.0, neginf=0.0)
     if sin_atajos:
         auxiliares[:, ATAJOS] = 0.0
+    if sin_escala:
+        auxiliares[:, 4:8] = 0.0
     return normalizada, auxiliares
 
 

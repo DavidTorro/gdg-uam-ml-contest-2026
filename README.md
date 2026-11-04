@@ -45,7 +45,7 @@ La red requiere PyTorch. Desde la raíz de este repositorio, ejecuta:
 
 El entrenamiento puede usar MPS en Mac; el evaluador carga la red en CPU y usa un solo hilo. La cifra de épocas aparece en el dashboard en el campo de iteraciones. Para importar un resultado al panel, desde `../ml-dashboard/` ejecuta `node scripts/importar_experimento.mjs` y selecciona el ID.
 
-PyTorch solo hace falta para entrenar y para los pesos `.pt`. La entrega usa la misma red exportada a NumPy (ver [Entrega actual](#entrega-actual)), así que `requirements.txt` no lo incluye. Los pesos anteriores permanecen disponibles para comparación.
+PyTorch solo hace falta para entrenar y para los pesos `.pt`. La entrega usa la misma red exportada a NumPy (ver [Entrega actual](#entrega-actual)), así que `requirements.txt` solo incluye NumPy: 2.2.6 para Python 3.10–3.11 y 2.5.4 para Python 3.12 o posterior. Los modelos antiguos `.pkl` requieren instalar scikit-learn por separado; no forman parte de la predicción por defecto.
 
 ### Resultados de la CNN
 
@@ -78,7 +78,7 @@ El fichero de train tiene trampas que el examen no tiene: `level` delata la clas
 
 Las redes más anchas (ancho 2–4, `exp024`–`exp026`, `exp028`–`exp032`, `exp035`) aciertan parecido pero son más lentas, y pierden en la nota a 60 s. Desde `exp033` la receta está estancada: más épocas, otra tasa de aprendizaje u otra semilla dan lo mismo dentro del ruido (~±0,3). La diferencia de demo entre `exp033` y `exp034` (misma receta) muestra que parte de la ventaja de `exp033` es suerte. El error principal que queda es la confusión entre las clases 6 y 7 (15 fallos en cada sentido en el demo).
 
-`exp040` añadió variación del ritmo del canal 0 durante el entrenamiento. Mejoró la prueba de estrés creada para ese cambio, pero bajó a 3,520 en el demo: la clase 6 subió de 64 % a 66 % y la 7 cayó de 64 % a 56 %. Se conserva `exp033`. Las decisiones y los descartes están en [`docs/engram.md`](docs/engram.md); los JSON de evaluación permanecen fuera de Git.
+`exp040` añadió variación del ritmo del canal 0 durante el entrenamiento. Mejoró la prueba de estrés creada para ese cambio, pero bajó a 3,520 en el demo: la clase 6 subió de 64 % a 66 % y la 7 cayó de 64 % a 56 %. Se conserva `exp033`. La memoria de trabajo y los JSON de evaluación permanecen fuera de este repositorio.
 
 ## Entrega actual
 
