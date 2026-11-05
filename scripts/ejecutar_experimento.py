@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -42,10 +43,24 @@ def main() -> None:
     parser.add_argument("--equilibrar", action="store_true", help="CNN: todas las clases pesan igual")
     parser.add_argument("--peso-clase-6", type=float, default=1.0,
                         help="CNN: multiplica el peso de la clase 6 sobre el equilibrio")
+    parser.add_argument("--igualar-correlacion-67", action="store_true",
+                        help="CNN: iguala correlación 0–1 de clases 6/7 durante entrenamiento")
+    parser.add_argument("--peso-consistencia-vistas", type=float, default=0.0,
+                        help="CNN: consistencia entre dos simulaciones independientes de cada muestra")
+    parser.add_argument("--mixup-alpha", type=float, default=0.0,
+                        help="CNN: mezcla señales y etiquetas simuladas")
+    parser.add_argument("--peso-alineacion-demo", type=float, default=0.0,
+                        help="CNN: alinea representaciones de train con demo sin leer sus etiquetas")
     parser.add_argument("--ancho", type=int, default=1, help="CNN: multiplica los filtros de la red")
+    parser.add_argument("--red", choices=("base", "multiescala"), default="base",
+                        help="CNN: arquitectura temporal; base reproduce los experimentos previos")
+    parser.add_argument("--fusion-tardia", action="store_true",
+                        help="CNN: procesa cada canal por separado hasta el resumen final")
     parser.add_argument("--elegir-epoca", choices=("control", "examen"), default="control", help="CNN: cómo elegir la mejor época")
     parser.add_argument("--lr", type=float, default=0.001, help="CNN: tasa de aprendizaje")
     parser.add_argument("--semilla", type=int, default=2026, help="CNN: semilla del entrenamiento")
+    parser.add_argument("--min-libre-gib", type=float, default=0.0,
+                        help="CNN: corta el entrenamiento si el disco baja de este umbral")
     parser.add_argument("--ajustes-simulador", default="{}", help="CNN: JSON con ajustes del simulador")
     parser.add_argument("--validacion", choices=("val_10k", "val_examen", "val_examen_v2"), default="val_10k",
                         help="Archivo de la evaluación oficial; los val_examen usan todo el archivo y 60 s")
@@ -82,11 +97,25 @@ def main() -> None:
         parser.error("--sin-escala y --prob-escala-cero no se pueden combinar")
     if args.peso_clase_6 <= 0 or (args.peso_clase_6 != 1.0 and not args.equilibrar):
         parser.error("--peso-clase-6 debe ser positivo y requiere --equilibrar si cambia de 1")
+    if args.peso_consistencia_vistas < 0 or not math.isfinite(args.peso_consistencia_vistas):
+        parser.error("--peso-consistencia-vistas debe ser finito y no negativo")
+    if args.min_libre_gib < 0 or not math.isfinite(args.min_libre_gib):
+        parser.error("--min-libre-gib debe ser finito y no negativo")
+    if args.peso_consistencia_vistas and (args.arquitectura != "cnn" or not args.simular_examen):
+        parser.error("--peso-consistencia-vistas requiere CNN y --simular-examen")
+    if any(valor < 0 or not math.isfinite(valor) for valor in (args.mixup_alpha, args.peso_alineacion_demo)):
+        parser.error("--mixup-alpha y --peso-alineacion-demo deben ser finitos y no negativos")
+    if (args.mixup_alpha or args.peso_alineacion_demo) and (args.arquitectura != "cnn" or not args.simular_examen):
+        parser.error("mixup y alineación demo requieren CNN y --simular-examen")
+    if sum(bool(valor) for valor in (args.peso_consistencia_vistas, args.mixup_alpha, args.peso_alineacion_demo)) > 1:
+        parser.error("Elige solo una de consistencia, mixup o alineación demo")
     if args.arquitectura == "cnn" and (args.aumento_ritmo or args.temporales or args.extendidas):
         parser.error("--aumento-ritmo, --temporales y --extendidas solo se usan con histgb")
-    if args.arquitectura != "cnn" and (args.simular_examen or args.sin_atajos or args.sin_escala or args.prob_escala_cero or args.equilibrar or args.peso_clase_6 != 1.0 or args.ancho != 1
+    if args.red == "multiescala" and (args.arquitectura != "cnn" or args.fusion_tardia):
+        parser.error("--red multiescala requiere CNN y no admite --fusion-tardia")
+    if args.arquitectura != "cnn" and (args.simular_examen or args.sin_atajos or args.sin_escala or args.prob_escala_cero or args.equilibrar or args.peso_clase_6 != 1.0 or args.igualar_correlacion_67 or args.peso_consistencia_vistas or args.mixup_alpha or args.peso_alineacion_demo or args.min_libre_gib or args.ancho != 1 or args.fusion_tardia
                                        or args.elegir_epoca != "control"):
-        parser.error("--simular-examen, --sin-atajos, --equilibrar, --ancho y --elegir-epoca solo se usan con cnn")
+        parser.error("Las opciones de simulador, auxiliares, pesos, ancho, fusión y elección de época solo se usan con cnn")
     if args.aumento_ritmo and not args.aumento_ruido:
         parser.error("--aumento-ritmo requiere --aumento-ruido")
 
@@ -117,14 +146,20 @@ def main() -> None:
     ]
     if args.arquitectura == "cnn":
         entrenamiento += ["--epocas", str(args.epocas), "--batch-size", str(args.batch_size),
-                          "--ancho", str(args.ancho), "--elegir-epoca", args.elegir_epoca,
+                          "--ancho", str(args.ancho), "--red", args.red,
+                          "--elegir-epoca", args.elegir_epoca,
                           "--lr", str(args.lr), "--semilla", str(args.semilla),
+                          "--min-libre-gib", str(args.min_libre_gib),
                           "--prob-escala-cero", str(args.prob_escala_cero),
                           "--peso-clase-6", str(args.peso_clase_6),
+                          "--peso-consistencia-vistas", str(args.peso_consistencia_vistas),
+                          "--mixup-alpha", str(args.mixup_alpha),
+                          "--peso-alineacion-demo", str(args.peso_alineacion_demo),
                           "--ajustes-simulador", args.ajustes_simulador]
         for activo, opcion in ((args.aumento_ruido, "--aumento-ruido"), (args.simular_examen, "--simular-examen"),
                                (args.sin_atajos, "--sin-atajos"), (args.sin_escala, "--sin-escala"),
-                               (args.equilibrar, "--equilibrar")):
+                               (args.equilibrar, "--equilibrar"), (args.fusion_tardia, "--fusion-tardia"),
+                               (args.igualar_correlacion_67, "--igualar-correlacion-67")):
             if activo:
                 entrenamiento.append(opcion)
     else:
@@ -159,11 +194,18 @@ def main() -> None:
             "sin_escala": args.sin_escala,
             "prob_escala_cero": args.prob_escala_cero,
             "peso_clase_6": args.peso_clase_6,
+            "igualar_correlacion_67": args.igualar_correlacion_67,
+            "peso_consistencia_vistas": args.peso_consistencia_vistas,
+            "mixup_alpha": args.mixup_alpha,
+            "peso_alineacion_demo": args.peso_alineacion_demo,
             "equilibrar": args.equilibrar,
             "ancho": args.ancho,
+            "red": args.red,
+            "fusion_tardia": args.fusion_tardia,
             "elegir_epoca": args.elegir_epoca,
             "lr": args.lr,
             "semilla": args.semilla,
+            "min_libre_gib": args.min_libre_gib,
             "ajustes_simulador": json.loads(args.ajustes_simulador),
         },
         "evaluacion": {
@@ -181,6 +223,8 @@ def main() -> None:
             "model.py": sha256(ROOT / "model.py"),
             "src/caracteristicas.py" if args.arquitectura == "histgb" else "src/red_convolucional.py":
                 sha256(ROOT / "src" / ("caracteristicas.py" if args.arquitectura == "histgb" else "red_convolucional.py")),
+            **({"src/red_multiescala.py": sha256(ROOT / "src/red_multiescala.py")}
+               if args.red == "multiescala" else {}),
             f"scripts/{script_entrenamiento}": sha256(ROOT / "scripts" / script_entrenamiento),
             "src/simulador.py": sha256(ROOT / "src/simulador.py"),
             "harness.py": sha256(HARNESS),

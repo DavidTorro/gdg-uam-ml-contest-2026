@@ -35,6 +35,7 @@ def main() -> None:
     if artefacto.get("formato") != "gdg-cnn-v1":
         raise ValueError(f"Formato de pesos CNN desconocido: {args.pesos}")
     ancho = int(artefacto.get("ancho", 1))
+    fusion_tardia = bool(artefacto.get("fusion_tardia", False))
     sin_atajos = bool(artefacto.get("sin_atajos", False))
     sin_escala = bool(artefacto.get("sin_escala", False))
     sesgo = np.zeros(8, dtype=np.float32)
@@ -46,12 +47,13 @@ def main() -> None:
 
     destino = ROOT / (args.destino or args.pesos.replace(".pt", ".sesgo.npz" if args.sesgo else ".npz"))
     np.savez(destino, formato=np.array("gdg-numpy-v1"), origen=np.array(args.pesos), ancho=np.array(ancho),
-             sin_atajos=np.array(sin_atajos), sin_escala=np.array(sin_escala), sesgo=sesgo,
+             sin_atajos=np.array(sin_atajos), sin_escala=np.array(sin_escala),
+             fusion_tardia=np.array(fusion_tardia), sesgo=sesgo,
              **{clave: tensor.numpy() for clave, tensor in artefacto["state_dict"].items()})
     print(f"Guardado {destino.relative_to(ROOT)} · ancho {ancho} · sin atajos {sin_atajos} · sesgo {sesgo.tolist()}")
 
     torch.set_num_threads(1)
-    red = RedConvolucional(ancho=ancho)
+    red = RedConvolucional(ancho=ancho, fusion_tardia=fusion_tardia)
     red.load_state_dict(artefacto["state_dict"])
     red.eval()
     rapida = RedNumpy(destino)
