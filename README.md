@@ -45,7 +45,7 @@ La red requiere PyTorch. Desde la raíz de este repositorio, ejecuta:
 
 El entrenamiento puede usar MPS en Mac; el evaluador carga la red en CPU y usa un solo hilo. La cifra de épocas aparece en el dashboard en el campo de iteraciones. Para importar un resultado al panel, desde `../ml-dashboard/` ejecuta `node scripts/importar_experimento.mjs` y selecciona el ID.
 
-PyTorch solo hace falta para entrenar y para los pesos `.pt`. La entrega usa la misma red exportada a NumPy (ver [Entrega actual](#entrega-actual)), así que `requirements.txt` solo incluye NumPy: 2.2.6 para Python 3.10–3.11 y 2.5.4 para Python 3.12 o posterior. Los modelos antiguos `.pkl` requieren instalar scikit-learn por separado; no forman parte de la predicción por defecto.
+PyTorch solo hace falta para entrenar y para los pesos `.pt`. La entrega usa la misma red exportada a ONNX (ver [Entrega actual](#entrega-actual)); `requirements.txt` incluye ONNX Runtime 1.21.1, Numba 0.68.1 y NumPy: 2.2.6 para Python 3.10–3.11 y 2.5.4 para Python 3.12 o posterior. Los modelos antiguos `.pkl` requieren instalar scikit-learn por separado; no forman parte de la predicción por defecto.
 
 ### Resultados de la CNN
 
@@ -82,7 +82,31 @@ Las redes más anchas (ancho 2–4, `exp024`–`exp026`, `exp028`–`exp032`, `e
 
 ## Entrega actual
 
-`model.py` carga por defecto `models/exp033.sesgo.npz`: la CNN `exp033` con el empujón de la clase 6 (0,9414), exportada a NumPy con `scripts/exportar_numpy.py`. `src/red_numpy.py` hace las mismas cuentas que PyTorch (las mismas clases en las 400 muestras del demo y en 3000 de validación) en ~25 % menos tiempo, porque se ahorra el coste fijo de PyTorch en cada capa: 0,101 ms frente a 0,133 ms por muestra en `val_examen_v2`. No necesita PyTorch: se ha comprobado en un entorno limpio solo con `requirements.txt` (3,779 en el demo, ~0,1 ms por muestra).
+`model.py` carga por defecto `models/exp033.sesgo.onnx`: la CNN `exp033` con el empujón de la clase 6 (0,9414), exportada a ONNX con `scripts/exportar_onnx.py`. `src/red_onnx.py` prepara las entradas con Numba JIT y ejecuta la red con ONNX Runtime en CPU y un hilo. La compilación ocurre en setup, fuera del tiempo de predicción. La variante NumPy permanece en `models/exp033.sesgo.npz` y puede seleccionarse con `GDG_MODEL_PATH`; `GDG_PREP_JIT=0` conserva ONNX con la preparación NumPy anterior.
+
+### Comprobación de ONNX
+
+`models/exp033.sesgo.onnx` contiene los mismos pesos y sesgo que la variante NumPy. `scripts/exportar_onnx.py` requiere `onnx` solo en el entorno de desarrollo; la inferencia de entrega usa `onnxruntime`. `scripts/comparar_backend_entrega.py` compara ambos motores con el harness oficial sobre el demo repetido para medir tiempo y paridad de predicciones.
+
+En este Mac, el harness dio las mismas clases y scores en demo, pseudo-test y `val_10k` (60 400 muestras); la latencia media de ONNX fue entre un 4 % y un 11 % menor según el conjunto. En Colab Linux, David instaló las dependencias y ejecutó la comparación con el harness: 10 000 predicciones idénticas, latencia media **0,5205 ms** con NumPy frente a **0,4342 ms** con ONNX. Esto proyecta **+9,49 % de score por velocidad** a 60 s si el throughput y la distribución se mantienen; el score 18,894532 de esa prueba procede del demo repetido y no es una nota de examen. El entorno oficial puede rendir distinto. `requirements-onnx.txt` queda como alias de `requirements.txt` para reproducir la prueba anterior.
+
+### Preparación JIT en evaluación
+
+La preparación JIT es ahora la ruta por defecto y Numba 0.68.1 forma parte de `requirements.txt`; `requirements-numba.txt` queda como alias para repetir la prueba. En este Mac conservó las clases en **60 400 muestras** de demo, pseudo-test y `val_10k`; el harness sobre el demo repetido pasó de 0,0660 a 0,0367 ms por muestra, con score idéntico. En Colab Linux, David obtuvo **0,4014 → 0,1852 ms** y 10 000/10 000 predicciones iguales, lo que proyecta **+47,22 % de score por velocidad** a 60 s si throughput y distribución se mantienen. El score **18,894532** de esta prueba procede del demo repetido, no es una nota del examen. El instalador de Colab avisó de una incompatibilidad con `pytensor` preinstalado; ni la entrega ni el harness lo importan, y las cuatro evaluaciones acabaron correctamente. `scripts/comparar_preparacion_jit.py` automatiza la comparación.
+
+### Resultados recientes y criterio de entrega
+
+Con el mismo harness local y ONNX+JIT, las variantes entrenadas después de `exp043` mejoran a menudo los controles sintéticos y pierden en el demo. Cada columna compara modelos **dentro del mismo conjunto**; los scores de conjuntos con 400, 10 000 y 50 000 muestras no son comparables entre sí.
+
+| Modelo | Demo 400 | Pseudo-test 50k | Val10k | Acierto clase 6/7 en demo |
+| --- | ---: | ---: | ---: | ---: |
+| **exp033, entrega** | **3,778906** | 48,561543 | 23,557647 | 64 % / 64 % |
+| exp047, consistencia entre vistas | 3,287634 | **52,677401** | 24,772631 | 48 % / 72 % |
+| exp048, MixUp | 3,140696 | 52,594106 | **25,087263** | 42 % / 74 % |
+| exp049, alineación de dominio | 3,323500 | 51,670775 | 24,800716 | 46 % / 72 % |
+| exp051, CNN multiescala | 3,703511 | 52,118131 | 24,563333 | 56 % / 74 % |
+
+`exp051` también tarda aproximadamente **1,4 veces** lo que `exp033` en el mismo Mac; su mejora sintética no compensa la velocidad. Una adaptación profunda supervisada con el demo (`exp050`) dio 3,948911 y 85,5 % de acierto **fuera de pliegue**, solo cuatro aciertos netos más que exp033 y por debajo del filtro fijado antes de entrenarla. No se produjo un peso final. Una versión INT8 de exp033 conservó los aciertos en Mac, pero en Colab Linux cayó a 66,75 % y fue más lenta; se descartó. El demo de 400 etiquetas se ha consultado muchas veces, y pseudo-test y val10k reutilizan origen o simulador: no son una estimación fiable de la nota oculta. Por ello se mantiene exp033 ONNX+JIT mientras se investiga una validación más cercana al test.
 
 Para exportar otro modelo y comprobar que coincide con PyTorch:
 
@@ -92,7 +116,7 @@ Para exportar otro modelo y comprobar que coincide con PyTorch:
 
 ## Estado de los modelos
 
-La variable `GDG_MODEL_PATH` permite evaluar otro peso local (`.pkl`, `.pt` o `.npz`) sin cambiar el código; con `.pt`, `GDG_SESGO_PATH` añade el empujón. La tabla siguiente recoge los primeros 20 experimentos con el protocolo local antiguo (1000 muestras, 2 s), que no es comparable con el de la sección anterior.
+La variable `GDG_MODEL_PATH` permite evaluar otro peso local (`.pkl`, `.pt`, `.npz` u `.onnx`) sin cambiar el código; con `.pt`, `GDG_SESGO_PATH` añade el empujón. La tabla siguiente recoge los primeros 20 experimentos con el protocolo local antiguo (1000 muestras, 2 s), que no es comparable con el de la sección anterior.
 
 | Modelo | Puntuación local | Muestras puntuadas | Acierto | Latencia media | `test_demo` (400 muestras) |
 | --- | ---: | ---: | ---: | ---: | --- |

@@ -17,13 +17,14 @@ class Model:
     def __init__(self) -> None:
         # La carga ocurre en setup y debe terminar antes de 120 segundos
         # El flujo local elige los pesos del experimento mediante una ruta relativa
-        # Por defecto, la entrega: CNN exp033 en NumPy con el empujón de la clase 6 incluido
-        ruta = os.environ.get("GDG_MODEL_PATH", "models/exp033.sesgo.npz")
+        # Por defecto, la entrega: CNN exp033 en ONNX con el empujón de la clase 6 incluido
+        ruta = os.environ.get("GDG_MODEL_PATH", "models/exp033.sesgo.onnx")
         pesos = ROOT / ruta
         if Path(ruta).is_absolute() or not pesos.is_file():
             raise FileNotFoundError(f"No se encuentran los pesos del modelo: {ruta}")
         self.red = None
         self.red_numpy = None
+        self.red_onnx = None
         if pesos.suffix == ".npz":
             # CNN exportada con scripts/exportar_numpy.py: mismas clases, más rápida y sin PyTorch
             # El empujón de clase, si lo hay, va dentro del propio .npz
@@ -31,16 +32,29 @@ class Model:
 
             self.red_numpy = RedNumpy(pesos)
             return
+        if pesos.suffix == ".onnx":
+            from src.red_onnx import RedOnnx
+
+            self.red_onnx = RedOnnx(pesos)
+            return
         if pesos.suffix == ".pt":
             import torch
             from src.red_convolucional import RedConvolucional, preparar_muestra
+            from src.red_multiescala import RedMultiescala
 
             torch.set_num_threads(1)
             artefacto = torch.load(pesos, map_location="cpu", weights_only=True)
             if artefacto.get("formato") != "gdg-cnn-v1":
                 raise ValueError(f"Formato de pesos CNN desconocido: {ruta}")
             # Los pesos desde exp022 guardan su ancho y si se entrenaron sin las auxiliares tramposas
-            self.red = RedConvolucional(ancho=int(artefacto.get("ancho", 1)))
+            tipo_red = artefacto.get("red", "base")
+            if tipo_red == "multiescala":
+                self.red = RedMultiescala(ancho=int(artefacto.get("ancho", 1)))
+            elif tipo_red == "base":
+                self.red = RedConvolucional(ancho=int(artefacto.get("ancho", 1)),
+                                            fusion_tardia=bool(artefacto.get("fusion_tardia", False)))
+            else:
+                raise ValueError(f"Red CNN desconocida: {tipo_red}")
             self.red.load_state_dict(artefacto["state_dict"])
             self.red.eval()
             self.torch = torch
@@ -76,6 +90,8 @@ class Model:
         # El evaluador cronometra esta llamada para una muestra cada vez
         if self.red_numpy is not None:
             return self.red_numpy.predecir(x)
+        if self.red_onnx is not None:
+            return self.red_onnx.predecir(x)
         if self.red is not None:
             serie, auxiliares = self.preparar_muestra(
                 x, sin_atajos=self.sin_atajos, sin_escala=self.sin_escala

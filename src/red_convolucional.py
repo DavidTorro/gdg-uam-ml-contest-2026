@@ -101,17 +101,19 @@ def preparar_lote(series: np.ndarray, tasa: np.ndarray, nivel: np.ndarray, grupo
 class RedConvolucional(nn.Module):
     """CNN 1D de pocos parámetros; recibe señal (N, 4, 256) y 17 auxiliares.
 
-    ancho multiplica el número de filtros; con 1 es la red de exp015 a exp020.
+    ancho multiplica el número de filtros; fusion_tardia separa los cuatro canales
+    hasta la capa final, conservando las anchuras y la resolución temporal.
     """
 
-    def __init__(self, ancho: int = 1) -> None:
+    def __init__(self, ancho: int = 1, fusion_tardia: bool = False) -> None:
         super().__init__()
         a = ancho
+        grupos = 4 if fusion_tardia else 1
         self.convoluciones = nn.Sequential(
-            nn.Conv1d(4, 16 * a, kernel_size=9, stride=2, padding=4), nn.ReLU(),
-            nn.Conv1d(16 * a, 32 * a, kernel_size=7, stride=2, padding=3), nn.ReLU(),
-            nn.Conv1d(32 * a, 48 * a, kernel_size=5, stride=2, padding=2), nn.ReLU(),
-            nn.Conv1d(48 * a, 64 * a, kernel_size=3, stride=2, padding=1), nn.ReLU(),
+            nn.Conv1d(4, 16 * a, kernel_size=9, stride=2, padding=4, groups=grupos), nn.ReLU(),
+            nn.Conv1d(16 * a, 32 * a, kernel_size=7, stride=2, padding=3, groups=grupos), nn.ReLU(),
+            nn.Conv1d(32 * a, 48 * a, kernel_size=5, stride=2, padding=2, groups=grupos), nn.ReLU(),
+            nn.Conv1d(48 * a, 64 * a, kernel_size=3, stride=2, padding=1, groups=grupos), nn.ReLU(),
         )
         self.media = nn.AdaptiveAvgPool1d(4)
         self.maximo = nn.AdaptiveMaxPool1d(4)
@@ -120,7 +122,11 @@ class RedConvolucional(nn.Module):
             nn.Linear(64 * a, 8),
         )
 
-    def forward(self, serie: torch.Tensor, auxiliares: torch.Tensor) -> torch.Tensor:
+    def forward(self, serie: torch.Tensor, auxiliares: torch.Tensor,
+                devolver_oculto: bool = False) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         oculto = self.convoluciones(serie)
         resumen = torch.cat((self.media(oculto).flatten(1), self.maximo(oculto).flatten(1), auxiliares), dim=1)
+        if devolver_oculto:
+            representacion = self.salida[:2](resumen)
+            return self.salida[2](representacion), representacion
         return self.salida(resumen)

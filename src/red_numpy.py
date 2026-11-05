@@ -26,8 +26,10 @@ def preparar_rapida(sample: Sample, sin_atajos: bool, sin_escala: bool = False) 
     ausentes = ~np.isfinite(serie)
     if ausentes.any():
         completa = serie.copy()
-        for canal in np.flatnonzero(ausentes.any(axis=1)):
+        for canal in range(4):
             huecos = ausentes[canal]
+            if not huecos.any():
+                continue
             presentes = ~huecos
             if presentes.any():
                 completa[canal, huecos] = np.interp(
@@ -41,8 +43,9 @@ def preparar_rapida(sample: Sample, sin_atajos: bool, sin_escala: bool = False) 
         faltan = np.zeros(4)
 
     medias = completa.mean(axis=1)
-    desviaciones = completa.std(axis=1)
-    normalizada = (completa - medias[:, None]) / (desviaciones[:, None] + 1e-6)
+    centrada = completa - medias[:, None]
+    desviaciones = np.sqrt(np.einsum("ij,ij->i", centrada, centrada) / 256.0)
+    normalizada = centrada / (desviaciones[:, None] + 1e-6)
     np.clip(normalizada, -6.0, 6.0, out=normalizada)
 
     # Mismo orden de auxiliares que preparar_muestra
@@ -76,15 +79,28 @@ class RedNumpy:
                      if clave.startswith(("convoluciones.", "salida."))}
             self.sin_atajos = bool(datos["sin_atajos"])
             self.sin_escala = bool(datos["sin_escala"]) if "sin_escala" in datos else False
+            self.fusion_tardia = bool(datos["fusion_tardia"]) if "fusion_tardia" in datos else False
             self.sesgo = datos["sesgo"].astype(np.float32)
 
         # Cada convolución pasa a una multiplicación de matrices sobre ventanas (posición, ventana·canal)
         self.capas = []
+        canales_entrada = 4
         for numero, (ventana, relleno) in zip((0, 2, 4, 6), CONVOLUCIONES):
             w = pesos[f"convoluciones.{numero}.weight"]
-            salidas, canales, _ = w.shape
-            matriz = np.ascontiguousarray(w.transpose(2, 1, 0).reshape(ventana * canales, salidas))
+            salidas, _, _ = w.shape
+            if self.fusion_tardia:
+                # Conv1d(groups=4) solo multiplica cada canal por sus propios filtros.
+                # Matmul por lotes evita calcular los bloques de ceros de una matriz densa.
+                por_grupo_salida = salidas // 4
+                por_grupo_entrada = canales_entrada // 4
+                matriz = np.ascontiguousarray(
+                    w.reshape(4, por_grupo_salida, por_grupo_entrada, ventana)
+                    .transpose(0, 3, 2, 1).reshape(4, ventana * por_grupo_entrada, por_grupo_salida)
+                )
+            else:
+                matriz = np.ascontiguousarray(w.transpose(2, 1, 0).reshape(ventana * canales_entrada, salidas))
             self.capas.append((matriz, pesos[f"convoluciones.{numero}.bias"], ventana, relleno))
+            canales_entrada = salidas
         self.filtros = salidas
 
         # PyTorch aplana el resumen como canal·4 + trozo; aquí lo tenemos como trozo·filtros + canal
@@ -109,8 +125,14 @@ class RedNumpy:
             # La ventana siempre cabe en el buffer; evitamos el coste de as_strided en cada capa.
             ventanas = np.ndarray((posiciones, ventana, canales), dtype=np.float32,
                                   buffer=con_relleno,
-                                  strides=(2 * paso_fila, paso_fila, paso_canal)).reshape(posiciones, ventana * canales)
-            x = ventanas @ matriz
+                                  strides=(2 * paso_fila, paso_fila, paso_canal))
+            if self.fusion_tardia:
+                por_grupo = canales // 4
+                bloques = ventanas.reshape(posiciones, ventana, 4, por_grupo)
+                bloques = bloques.transpose(2, 0, 1, 3).reshape(4, posiciones, ventana * por_grupo)
+                x = (bloques @ matriz).transpose(1, 0, 2).reshape(posiciones, -1)
+            else:
+                x = ventanas.reshape(posiciones, ventana * canales) @ matriz
             x += sesgo
             np.maximum(x, 0.0, out=x)
 
