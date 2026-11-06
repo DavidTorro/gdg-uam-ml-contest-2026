@@ -27,6 +27,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--id", help="Identificador único, por ejemplo exp001")
     parser.add_argument("--muestras", type=int, default=5_000)
+    parser.add_argument("--indices-entrenamiento", default=None,
+                        help="CNN: archivo .npy de remuestreo de train_90k")
     parser.add_argument("--iteraciones", type=int, default=80)
     parser.add_argument("--arquitectura", choices=("histgb", "cnn"), default="histgb")
     parser.add_argument("--epocas", type=int, default=12, help="Épocas de la CNN")
@@ -37,6 +39,9 @@ def main() -> None:
     parser.add_argument("--extendidas", action="store_true", help="Añade características estadísticas y espectrales detalladas")
     parser.add_argument("--simular-examen", action="store_true", help="CNN: pasa cada época por el simulador de examen")
     parser.add_argument("--sin-atajos", action="store_true", help="CNN: anula medias y level en las auxiliares")
+    parser.add_argument("--sin-grupo", action="store_true", help="CNN: anula el indicador A/B/C en entrenamiento y evaluación")
+    parser.add_argument("--prob-grupo-cero", type=float, default=0.0,
+                        help="CNN: oculta el indicador A/B/C por muestra durante el entrenamiento")
     parser.add_argument("--sin-escala", action="store_true", help="CNN: anula tamaños de canal en las auxiliares")
     parser.add_argument("--prob-escala-cero", type=float, default=0.0,
                         help="CNN: probabilidad de ocultar tamaños de canal durante entrenamiento")
@@ -52,17 +57,19 @@ def main() -> None:
     parser.add_argument("--peso-alineacion-demo", type=float, default=0.0,
                         help="CNN: alinea representaciones de train con demo sin leer sus etiquetas")
     parser.add_argument("--ancho", type=int, default=1, help="CNN: multiplica los filtros de la red")
-    parser.add_argument("--red", choices=("base", "multiescala"), default="base",
-                        help="CNN: arquitectura temporal; base reproduce los experimentos previos")
+    parser.add_argument("--red", choices=("base", "multiescala", "dos_rutas"), default="base",
+                        help="CNN: arquitectura temporal; dos_rutas mezcla patrones conjuntos y por canal")
     parser.add_argument("--fusion-tardia", action="store_true",
                         help="CNN: procesa cada canal por separado hasta el resumen final")
     parser.add_argument("--elegir-epoca", choices=("control", "examen"), default="control", help="CNN: cómo elegir la mejor época")
+    parser.add_argument("--archivo-examen", default="data/val_examen_v2.npz",
+                        help="CNN: archivo para elegir la época cuando --elegir-epoca examen")
     parser.add_argument("--lr", type=float, default=0.001, help="CNN: tasa de aprendizaje")
     parser.add_argument("--semilla", type=int, default=2026, help="CNN: semilla del entrenamiento")
     parser.add_argument("--min-libre-gib", type=float, default=0.0,
                         help="CNN: corta el entrenamiento si el disco baja de este umbral")
     parser.add_argument("--ajustes-simulador", default="{}", help="CNN: JSON con ajustes del simulador")
-    parser.add_argument("--validacion", choices=("val_10k", "val_examen", "val_examen_v2"), default="val_10k",
+    parser.add_argument("--validacion", choices=("val_10k", "val_examen", "val_examen_v2", "val_exp052_select"), default="val_10k",
                         help="Archivo de la evaluación oficial; los val_examen usan todo el archivo y 60 s")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--max-muestras", type=int, default=1_000)
@@ -93,6 +100,8 @@ def main() -> None:
         parser.error("La CNN requiere al menos 80 muestras para separar control interno")
     if not 0.0 <= args.prob_escala_cero <= 1.0:
         parser.error("--prob-escala-cero debe estar entre 0 y 1")
+    if not 0.0 <= args.prob_grupo_cero <= 1.0 or (args.sin_grupo and args.prob_grupo_cero):
+        parser.error("--prob-grupo-cero debe estar entre 0 y 1 y no se combina con --sin-grupo")
     if args.sin_escala and args.prob_escala_cero:
         parser.error("--sin-escala y --prob-escala-cero no se pueden combinar")
     if args.peso_clase_6 <= 0 or (args.peso_clase_6 != 1.0 and not args.equilibrar):
@@ -111,9 +120,9 @@ def main() -> None:
         parser.error("Elige solo una de consistencia, mixup o alineación demo")
     if args.arquitectura == "cnn" and (args.aumento_ritmo or args.temporales or args.extendidas):
         parser.error("--aumento-ritmo, --temporales y --extendidas solo se usan con histgb")
-    if args.red == "multiescala" and (args.arquitectura != "cnn" or args.fusion_tardia):
-        parser.error("--red multiescala requiere CNN y no admite --fusion-tardia")
-    if args.arquitectura != "cnn" and (args.simular_examen or args.sin_atajos or args.sin_escala or args.prob_escala_cero or args.equilibrar or args.peso_clase_6 != 1.0 or args.igualar_correlacion_67 or args.peso_consistencia_vistas or args.mixup_alpha or args.peso_alineacion_demo or args.min_libre_gib or args.ancho != 1 or args.fusion_tardia
+    if args.red != "base" and (args.arquitectura != "cnn" or args.fusion_tardia):
+        parser.error("--red multiescala/dos_rutas requiere CNN y no admite --fusion-tardia")
+    if args.arquitectura != "cnn" and (args.indices_entrenamiento or args.simular_examen or args.sin_atajos or args.sin_grupo or args.prob_grupo_cero or args.sin_escala or args.prob_escala_cero or args.equilibrar or args.peso_clase_6 != 1.0 or args.igualar_correlacion_67 or args.peso_consistencia_vistas or args.mixup_alpha or args.peso_alineacion_demo or args.min_libre_gib or args.ancho != 1 or args.fusion_tardia
                                        or args.elegir_epoca != "control"):
         parser.error("Las opciones de simulador, auxiliares, pesos, ancho, fusión y elección de época solo se usan con cnn")
     if args.aumento_ritmo and not args.aumento_ruido:
@@ -130,7 +139,7 @@ def main() -> None:
 
     particion = ROOT / "experiments/particion_90_10_2026.json"
     validacion = ROOT / f"data/{args.validacion}.npz"
-    if args.validacion.startswith("val_examen"):
+    if args.validacion.startswith("val_examen") or args.validacion == "val_exp052_select":
         # Mismo protocolo que results/examen_*: un archivo entero con el límite de 60 s del concurso
         args.max_muestras, args.presupuesto_s = 10_000_000, 60.0
     for ruta in (HARNESS, ROOT / "data/train_90k.npz", validacion, particion):
@@ -148,15 +157,20 @@ def main() -> None:
         entrenamiento += ["--epocas", str(args.epocas), "--batch-size", str(args.batch_size),
                           "--ancho", str(args.ancho), "--red", args.red,
                           "--elegir-epoca", args.elegir_epoca,
+                          "--archivo-examen", args.archivo_examen,
                           "--lr", str(args.lr), "--semilla", str(args.semilla),
                           "--min-libre-gib", str(args.min_libre_gib),
                           "--prob-escala-cero", str(args.prob_escala_cero),
+                          "--prob-grupo-cero", str(args.prob_grupo_cero),
                           "--peso-clase-6", str(args.peso_clase_6),
                           "--peso-consistencia-vistas", str(args.peso_consistencia_vistas),
                           "--mixup-alpha", str(args.mixup_alpha),
                           "--peso-alineacion-demo", str(args.peso_alineacion_demo),
                           "--ajustes-simulador", args.ajustes_simulador]
+        if args.indices_entrenamiento:
+            entrenamiento += ["--indices-entrenamiento", args.indices_entrenamiento]
         for activo, opcion in ((args.aumento_ruido, "--aumento-ruido"), (args.simular_examen, "--simular-examen"),
+                               (args.sin_grupo, "--sin-grupo"),
                                (args.sin_atajos, "--sin-atajos"), (args.sin_escala, "--sin-escala"),
                                (args.equilibrar, "--equilibrar"), (args.fusion_tardia, "--fusion-tardia"),
                                (args.igualar_correlacion_67, "--igualar-correlacion-67")):
@@ -183,6 +197,8 @@ def main() -> None:
         "entrenamiento": {
             "arquitectura": args.arquitectura,
             "muestras": args.muestras,
+            "indices_entrenamiento": args.indices_entrenamiento,
+            "sha256_indices_entrenamiento": sha256(ROOT / args.indices_entrenamiento) if args.indices_entrenamiento else None,
             "iteraciones": args.epocas if args.arquitectura == "cnn" else args.iteraciones,
             "batch_size": args.batch_size if args.arquitectura == "cnn" else None,
             "aumento_ruido": args.aumento_ruido,
@@ -191,6 +207,8 @@ def main() -> None:
             "extendidas": args.extendidas,
             "simular_examen": args.simular_examen,
             "sin_atajos": args.sin_atajos,
+            "sin_grupo": args.sin_grupo,
+            "prob_grupo_cero": args.prob_grupo_cero,
             "sin_escala": args.sin_escala,
             "prob_escala_cero": args.prob_escala_cero,
             "peso_clase_6": args.peso_clase_6,
@@ -203,6 +221,7 @@ def main() -> None:
             "red": args.red,
             "fusion_tardia": args.fusion_tardia,
             "elegir_epoca": args.elegir_epoca,
+            "archivo_examen": args.archivo_examen if args.arquitectura == "cnn" else None,
             "lr": args.lr,
             "semilla": args.semilla,
             "min_libre_gib": args.min_libre_gib,
@@ -225,6 +244,8 @@ def main() -> None:
                 sha256(ROOT / "src" / ("caracteristicas.py" if args.arquitectura == "histgb" else "red_convolucional.py")),
             **({"src/red_multiescala.py": sha256(ROOT / "src/red_multiescala.py")}
                if args.red == "multiescala" else {}),
+            **({"src/red_dos_rutas.py": sha256(ROOT / "src/red_dos_rutas.py")}
+               if args.red == "dos_rutas" else {}),
             f"scripts/{script_entrenamiento}": sha256(ROOT / "scripts" / script_entrenamiento),
             "src/simulador.py": sha256(ROOT / "src/simulador.py"),
             "harness.py": sha256(HARNESS),

@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT.parent / "ml-contest-materials"))
 sys.path.insert(0, str(ROOT))
 
 from src.red_convolucional import RedConvolucional
+from src.red_dos_rutas import RedDosRutas
 from src.red_multiescala import RedMultiescala
 
 
@@ -33,6 +34,8 @@ def main() -> None:
     tipo_red = artefacto.get("red", "base")
     if tipo_red == "multiescala":
         red = RedMultiescala(ancho=int(artefacto.get("ancho", 1))).eval()
+    elif tipo_red == "dos_rutas":
+        red = RedDosRutas(ancho=int(artefacto.get("ancho", 1))).eval()
     elif tipo_red == "base":
         red = RedConvolucional(
             ancho=int(artefacto.get("ancho", 1)),

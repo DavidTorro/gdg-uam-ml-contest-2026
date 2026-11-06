@@ -40,6 +40,7 @@ class Model:
         if pesos.suffix == ".pt":
             import torch
             from src.red_convolucional import RedConvolucional, preparar_muestra
+            from src.red_dos_rutas import RedDosRutas
             from src.red_multiescala import RedMultiescala
 
             torch.set_num_threads(1)
@@ -50,6 +51,8 @@ class Model:
             tipo_red = artefacto.get("red", "base")
             if tipo_red == "multiescala":
                 self.red = RedMultiescala(ancho=int(artefacto.get("ancho", 1)))
+            elif tipo_red == "dos_rutas":
+                self.red = RedDosRutas(ancho=int(artefacto.get("ancho", 1)))
             elif tipo_red == "base":
                 self.red = RedConvolucional(ancho=int(artefacto.get("ancho", 1)),
                                             fusion_tardia=bool(artefacto.get("fusion_tardia", False)))
@@ -61,6 +64,7 @@ class Model:
             self.preparar_muestra = preparar_muestra
             self.sin_atajos = bool(artefacto.get("sin_atajos", False))
             self.sin_escala = bool(artefacto.get("sin_escala", False))
+            self.sin_grupo = bool(artefacto.get("sin_grupo", False))
 
             # Sesgo opcional que se suma a la salida de la red antes de elegir clase
             # Lo calcula scripts/calibrar_sesgo.py; sin GDG_SESGO_PATH la red no cambia
@@ -96,6 +100,8 @@ class Model:
             serie, auxiliares = self.preparar_muestra(
                 x, sin_atajos=self.sin_atajos, sin_escala=self.sin_escala
             )
+            if self.sin_grupo:
+                auxiliares[14:17] = 0.0
             with self.torch.inference_mode():
                 salida = self.red(
                     self.torch.from_numpy(serie[None, ...]),

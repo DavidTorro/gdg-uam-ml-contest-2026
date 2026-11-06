@@ -10,6 +10,7 @@ que delatan la clase solo en train, --equilibrar hace que todas las clases pesen
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -29,6 +30,7 @@ sys.path.insert(0, str(ROOT.parent / "ml-contest-materials"))
 sys.path.insert(0, str(ROOT))
 
 from src.red_convolucional import RedConvolucional, preparar_lote
+from src.red_dos_rutas import RedDosRutas
 from src.red_multiescala import RedMultiescala
 from src.simulador import PARAMETROS, simular_examen
 
@@ -118,6 +120,7 @@ def comprobar_disco(min_libre_gib: float) -> None:
 
 
 def preparar(datos: dict, indices: np.ndarray, sin_atajos: bool, sin_escala: bool = False,
+             sin_grupo: bool = False,
              series: np.ndarray | None = None,
              nivel: np.ndarray | None = None) -> tuple[torch.Tensor, torch.Tensor]:
     """Prepara señales y auxiliares en bloques para no disparar la memoria"""
@@ -130,6 +133,8 @@ def preparar(datos: dict, indices: np.ndarray, sin_atajos: bool, sin_escala: boo
             datos["meta__level"][bloque] if nivel is None else nivel[inicio:inicio + 20_000],
             datos["meta__group"][bloque], sin_atajos=sin_atajos, sin_escala=sin_escala,
         )
+        if sin_grupo:
+            a[:, 14:17] = 0.0
         partes_s.append(s)
         partes_a.append(a)
     return torch.from_numpy(np.concatenate(partes_s)), torch.from_numpy(np.concatenate(partes_a))
@@ -139,11 +144,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--id", required=True)
     parser.add_argument("--muestras", type=int, default=90_000)
+    parser.add_argument("--indices-entrenamiento", default=None,
+                        help="Archivo .npy de índices de train_90k; admite repeticiones para remuestreo")
     parser.add_argument("--epocas", type=int, default=12)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--aumento-ruido", action="store_true", help="Añade ruido y huecos nuevos a los lotes de entrenamiento")
     parser.add_argument("--simular-examen", action="store_true", help="Pasa cada época por el simulador de examen")
     parser.add_argument("--sin-atajos", action="store_true", help="Anula las medias y el level en las auxiliares")
+    parser.add_argument("--sin-grupo", action="store_true",
+                        help="Anula las tres auxiliares de grupo; útil al reservar un grupo entero")
+    parser.add_argument("--prob-grupo-cero", type=float, default=0.0,
+                        help="Probabilidad de ocultar el indicador de grupo por muestra solo al entrenar")
     parser.add_argument("--sin-escala", action="store_true", help="Anula los tamaños de canal en las auxiliares")
     parser.add_argument("--prob-escala-cero", type=float, default=0.0,
                         help="Probabilidad de ocultar los tamaños de canal por muestra solo durante el entrenamiento")
@@ -163,8 +174,8 @@ def main() -> None:
     parser.add_argument("--archivo-examen", default="data/val_examen_v2.npz",
                         help="Examen de prácticas para elegir la época; val_examen.npz es el de exp022, con huella")
     parser.add_argument("--ancho", type=int, default=1, help="Multiplica los filtros de la red")
-    parser.add_argument("--red", choices=("base", "multiescala"), default="base",
-                        help="Arquitectura CNN; multiescala observa patrones temporales más largos")
+    parser.add_argument("--red", choices=("base", "multiescala", "dos_rutas"), default="base",
+                        help="Arquitectura CNN; dos_rutas combina mezcla temprana y formas por canal")
     parser.add_argument("--fusion-tardia", action="store_true",
                         help="Convoluciones independientes por canal; fusiona solo tras resumirlos")
     parser.add_argument("--lr", type=float, default=0.001)
@@ -187,10 +198,12 @@ def main() -> None:
         parser.error("--epocas, --batch-size y --ancho deben ser positivos")
     if args.min_libre_gib < 0 or not np.isfinite(args.min_libre_gib):
         parser.error("--min-libre-gib debe ser finito y no negativo")
-    if args.red == "multiescala" and args.fusion_tardia:
-        parser.error("--fusion-tardia no existe para la red multiescala")
+    if args.red != "base" and args.fusion_tardia:
+        parser.error("--fusion-tardia solo existe para la red base")
     if not 0.0 <= args.prob_escala_cero <= 1.0:
         parser.error("--prob-escala-cero debe estar entre 0 y 1")
+    if not 0.0 <= args.prob_grupo_cero <= 1.0 or (args.sin_grupo and args.prob_grupo_cero):
+        parser.error("--prob-grupo-cero debe estar entre 0 y 1 y no se combina con --sin-grupo")
     if args.sin_escala and args.prob_escala_cero:
         parser.error("--sin-escala y --prob-escala-cero no se pueden combinar")
     if args.peso_clase_6 <= 0 or (args.peso_clase_6 != 1.0 and not args.equilibrar):
@@ -223,9 +236,24 @@ def main() -> None:
     np.random.seed(args.semilla)
     torch.manual_seed(args.semilla)
     rng = np.random.default_rng(args.semilla)
-    indices = np.arange(total)
-    if args.muestras < total:
-        indices, _ = train_test_split(indices, train_size=args.muestras, stratify=datos["labels"], random_state=2026)
+    ruta_indices = ROOT / args.indices_entrenamiento if args.indices_entrenamiento else None
+    if ruta_indices is not None:
+        if ruta_indices.suffix != ".npy" or not ruta_indices.resolve().is_relative_to(ROOT):
+            parser.error("--indices-entrenamiento debe ser un .npy dentro del repositorio")
+        if not ruta_indices.is_file():
+            parser.error(f"Falta {ruta_indices}")
+        sha_indices = hashlib.sha256(ruta_indices.read_bytes()).hexdigest()
+        indices = np.load(ruta_indices, allow_pickle=False)
+        if indices.ndim != 1 or indices.dtype.kind not in "iu" or len(indices) < args.muestras:
+            parser.error("--indices-entrenamiento debe ser un vector entero con al menos --muestras filas")
+        if np.any(indices >= total) or np.any(indices < 0):
+            parser.error("--indices-entrenamiento contiene índices fuera de train_90k")
+    else:
+        indices = np.arange(total)
+        sha_indices = None
+    if args.muestras < len(indices):
+        indices, _ = train_test_split(indices, train_size=args.muestras,
+                                      stratify=datos["labels"][indices], random_state=2026)
     indices = np.sort(indices)
     etiquetas_todas = np.asarray(datos["labels"][indices], dtype=np.int64)
 
@@ -243,16 +271,16 @@ def main() -> None:
     comprobar_disco(args.min_libre_gib)
     if args.elegir_epoca == "control":
         control_idx = indices[np.sort(control_pos)]
-        control_s, control_a = preparar(datos, control_idx, args.sin_atajos, args.sin_escala)
+        control_s, control_a = preparar(datos, control_idx, args.sin_atajos, args.sin_escala, args.sin_grupo)
         control_y = torch.from_numpy(np.asarray(datos["labels"][control_idx], dtype=np.int64))
         nombre_control = "control interno"
     else:
         datos_examen = dict(np.load(examen))
         todos = np.arange(len(datos_examen["labels"]))
-        control_s, control_a = preparar(datos_examen, todos, args.sin_atajos, args.sin_escala)
+        control_s, control_a = preparar(datos_examen, todos, args.sin_atajos, args.sin_escala, args.sin_grupo)
         control_y = torch.from_numpy(np.asarray(datos_examen["labels"], dtype=np.int64))
         nombre_control = "examen de prácticas"
-    fijas = None if args.simular_examen else preparar(datos, entrenamiento_idx, args.sin_atajos, args.sin_escala)
+    fijas = None if args.simular_examen else preparar(datos, entrenamiento_idx, args.sin_atajos, args.sin_escala, args.sin_grupo)
     objetivo_s = objetivo_a = None
     if args.peso_alineacion_demo:
         ruta_demo = ROOT / "data/test_demo.npz"
@@ -261,7 +289,7 @@ def main() -> None:
         datos_demo = dict(np.load(ruta_demo))
         datos_demo.pop("labels", None)
         indices_demo = np.arange(len(datos_demo["series"]))
-        objetivo_s, objetivo_a = preparar(datos_demo, indices_demo, args.sin_atajos, args.sin_escala)
+        objetivo_s, objetivo_a = preparar(datos_demo, indices_demo, args.sin_atajos, args.sin_escala, args.sin_grupo)
     segundos_preparacion = perf_counter() - inicio_total
 
     dispositivo = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -269,6 +297,7 @@ def main() -> None:
         objetivo_s = objetivo_s.to(dispositivo)
         objetivo_a = objetivo_a.to(dispositivo)
     red = (RedMultiescala(ancho=args.ancho) if args.red == "multiescala"
+           else RedDosRutas(ancho=args.ancho) if args.red == "dos_rutas"
            else RedConvolucional(ancho=args.ancho, fusion_tardia=args.fusion_tardia)).to(dispositivo)
     optimizador = torch.optim.AdamW(red.parameters(), lr=args.lr, weight_decay=0.01)
     plan = torch.optim.lr_scheduler.CosineAnnealingLR(optimizador, T_max=args.epocas)
@@ -303,10 +332,10 @@ def main() -> None:
                     s_2, nv_2 = simular_examen(datos["series"][bloque], rng, parametros=ajustes)
                     series_2.append(s_2)
                     niveles_2.append(nv_2)
-            serie_e, aux_e = preparar(datos, entrenamiento_idx, args.sin_atajos, args.sin_escala,
+            serie_e, aux_e = preparar(datos, entrenamiento_idx, args.sin_atajos, args.sin_escala, args.sin_grupo,
                                       series=np.concatenate(series), nivel=np.concatenate(niveles))
             if args.peso_consistencia_vistas:
-                serie_e_2, aux_e_2 = preparar(datos, entrenamiento_idx, args.sin_atajos, args.sin_escala,
+                serie_e_2, aux_e_2 = preparar(datos, entrenamiento_idx, args.sin_atajos, args.sin_escala, args.sin_grupo,
                                               series=np.concatenate(series_2), nivel=np.concatenate(niveles_2))
             del series, niveles, series_2, niveles_2
             segundos_simulador += perf_counter() - antes
@@ -343,6 +372,13 @@ def main() -> None:
                 if args.peso_consistencia_vistas:
                     auxiliar_2 = auxiliar_2.clone()
                     auxiliar_2[ocultar, 4:8] = 0.0
+            if args.prob_grupo_cero:
+                auxiliar = auxiliar.clone()
+                ocultar_grupo = torch.rand(len(auxiliar), device=dispositivo) < args.prob_grupo_cero
+                auxiliar[ocultar_grupo, 14:17] = 0.0
+                if args.peso_consistencia_vistas:
+                    auxiliar_2 = auxiliar_2.clone()
+                    auxiliar_2[ocultar_grupo, 14:17] = 0.0
             if args.aumento_ruido:
                 serie, auxiliar = aumentar_senales(serie, auxiliar)
                 if args.peso_consistencia_vistas:
@@ -443,7 +479,10 @@ def main() -> None:
     torch.save({
         "formato": "gdg-cnn-v1", "state_dict": mejores_pesos,
         "red": args.red,
-        "ancho": args.ancho, "sin_atajos": args.sin_atajos, "sin_escala": args.sin_escala,
+        "ancho": args.ancho, "batch_size": args.batch_size,
+        "sin_atajos": args.sin_atajos, "sin_escala": args.sin_escala,
+        "sin_grupo": args.sin_grupo,
+        "prob_grupo_cero": args.prob_grupo_cero,
         "fusion_tardia": args.fusion_tardia,
         "prob_escala_cero": args.prob_escala_cero,
         "peso_clase_6": args.peso_clase_6,
@@ -454,10 +493,13 @@ def main() -> None:
         "min_libre_gib": args.min_libre_gib,
     }, destino)
     resumen = {
-        "modelo": ("Red multiescala 1D" if args.red == "multiescala" else "Red convolucional 1D")
+        "modelo": ("Red multiescala 1D" if args.red == "multiescala"
+                   else "Red de dos rutas 1D" if args.red == "dos_rutas" else "Red convolucional 1D")
                   + (" · simulador de examen" if args.simular_examen else ""),
         "id": args.id,
         "fuente": fuente.name,
+        "indices_entrenamiento": str(ruta_indices.relative_to(ROOT)) if ruta_indices else None,
+        "sha256_indices_entrenamiento": sha_indices,
         "muestras_seleccionadas": int(len(indices)),
         "muestras_entrenamiento": int(len(entrenamiento_idx)),
         "muestras_control_interno": int(len(control_pos)),
@@ -466,6 +508,8 @@ def main() -> None:
         "parametros_simulador": {**PARAMETROS, **ajustes} if args.simular_examen else None,
         "sin_atajos": args.sin_atajos,
         "sin_escala": args.sin_escala,
+        "sin_grupo": args.sin_grupo,
+        "prob_grupo_cero": args.prob_grupo_cero,
         "prob_escala_cero": args.prob_escala_cero,
         "peso_clase_6": args.peso_clase_6,
         "igualar_correlacion_67": args.igualar_correlacion_67,
@@ -477,6 +521,7 @@ def main() -> None:
         "elegir_epoca": args.elegir_epoca,
         "archivo_examen": args.archivo_examen if args.elegir_epoca == "examen" else None,
         "ancho": args.ancho,
+        "batch_size": args.batch_size,
         "red": args.red,
         "fusion_tardia": args.fusion_tardia,
         "lr": args.lr,
