@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title description">
+  <title id="title">GDG on Campus UAM ML Contest</title>
+  <desc id="description">An illustrative machine learning pipeline: four time-series input channels flow through a stylized 1D CNN neural model to eight class scores. Scores and signals are conceptual, not measured model outputs.</desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b3153"/>
+      <stop offset="1" stop-color="#12213a"/>
+    </linearGradient>
+    <radialGradient id="pipeline-light" cx="52%" cy="47%" r="61%">
+      <stop offset="0" stop-color="#2d5d92" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#2d5d92" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="chip" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#244c77"/>
+      <stop offset="1" stop-color="#183656"/>
+    </linearGradient>
+    <linearGradient id="winning-bar" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#f9ab00"/>
+      <stop offset="1" stop-color="#ffdf67"/>
+    </linearGradient>
+    <pattern id="background-lines" width="64" height="64" patternUnits="userSpaceOnUse">
+      <path d="M0 64L64 0" fill="none" stroke="#a8c5ec" stroke-width="1" opacity=".065"/>
+    </pattern>
+    <filter id="soft-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="300" fill="url(#background)"/>
+  <rect width="1200" height="300" fill="url(#background-lines)"/>
+  <rect x="614" width="586" height="300" fill="url(#pipeline-light)"/>
+  <path d="M0 299H1200" stroke="#ffffff" opacity=".08"/>
+
+  <g aria-hidden="true">
+    <rect x="75" y="67" width="37" height="7" rx="3.5" fill="#4285f4"/>
+    <rect x="127" y="67" width="37" height="7" rx="3.5" fill="#ea4335"/>
+    <rect x="179" y="67" width="37" height="7" rx="3.5" fill="#fbbc04"/>
+    <rect x="231" y="67" width="37" height="7" rx="3.5" fill="#34a853"/>
+  </g>
+  <text x="75" y="116" fill="#a9bdd9" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="1.3">GDG ON CAMPUS · UAM</text>
+  <text x="70" y="190" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="67" font-weight="800" letter-spacing="1">ML CONTEST</text>
+  <text x="75" y="231" fill="#b8c9e2" font-family="Arial, Helvetica, sans-serif" font-size="17" letter-spacing=".5">2026 · Time-series classification</text>
+
+  <!-- Illustrative input signals. -->
+  <g font-family="Arial, Helvetica, sans-serif" aria-hidden="true">
+    <text x="644" y="70" fill="#a9bdd9" font-size="12" font-weight="700" letter-spacing="1.6">4 CHANNELS</text>
+    <path d="M644 94V202" fill="none" stroke="#8eb2dc" stroke-width="1.5" opacity=".65"/>
+    <g fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M644 111H657L665 101L674 120L684 108H706L715 103L725 113L735 105L744 112H782" stroke="#4e9dff"/>
+      <path d="M644 137H660L669 128L677 144L686 135H709L717 129L727 139L736 131L744 138H782" stroke="#ff685d"/>
+      <path d="M644 164H657L666 155L674 174L684 162H706L716 154L725 167L735 159L744 166H782" stroke="#ffca3a"/>
+      <path d="M644 191H659L668 183L677 196L687 190H708L717 185L727 197L736 187L745 192H782" stroke="#54d477"/>
+    </g>
+    <g stroke="#b7cee7" stroke-width="1.2" opacity=".7">
+      <path d="M639 111H644M639 137H644M639 164H644M639 191H644"/>
+    </g>
+    <text x="644" y="235" fill="#8fa9c8" font-size="10.5" font-weight="700" letter-spacing="1">4 × 256 VALUES</text>
+  </g>
+
+  <!-- Static flow arrows with a clear shaft and solid tip. -->
+  <g aria-hidden="true">
+    <path d="M793 148H827M985 148H1005" fill="none" stroke="#83c7ff" stroke-width="9" stroke-linecap="round" opacity=".16" filter="url(#soft-glow)"/>
+    <path d="M793 148H827M985 148H1005" fill="none" stroke="#a9d7ff" stroke-width="3.6" stroke-linecap="round"/>
+    <path d="M823 140L836 148L823 156Z" fill="#c8eaff"/>
+    <path d="M1000 140L1013 148L1000 156Z" fill="#c8eaff"/>
+    <circle cx="793" cy="148" r="2.4" fill="#8ac8ff"/>
+    <circle cx="985" cy="148" r="2.4" fill="#8ac8ff"/>
+  </g>
+
+  <!-- Abstract neural network inside the 1D CNN model. -->
+  <g aria-hidden="true">
+    <rect x="850" y="94" width="128" height="114" rx="16" fill="#4fa8ff" opacity=".18" filter="url(#soft-glow)"/>
+    <rect x="850" y="94" width="128" height="114" rx="16" fill="url(#chip)" stroke="#6cafea" stroke-width="1.6"/>
+    <rect x="856" y="100" width="116" height="102" rx="12" fill="none" stroke="#a2d5ff" stroke-width=".8" opacity=".27"/>
+    <path d="M870 113L913 109 M870 113L913 128 M870 113L913 147 M870 113L913 166 M870 113L913 185 M870 136L913 109 M870 136L913 128 M870 136L913 147 M870 136L913 166 M870 136L913 185 M870 159L913 109 M870 159L913 128 M870 159L913 147 M870 159L913 166 M870 159L913 185 M870 182L913 109 M870 182L913 128 M870 182L913 147 M870 182L913 166 M870 182L913 185 M913 109L956 124 M913 109L956 147 M913 109L956 170 M913 128L956 124 M913 128L956 147 M913 128L956 170 M913 147L956 124 M913 147L956 147 M913 147L956 170 M913 166L956 124 M913 166L956 147 M913 166L956 170 M913 185L956 124 M913 185L956 147 M913 185L956 170" fill="none" stroke="#8ed1ff" stroke-width=".95" opacity=".22"/>
+    <path d="M870 136L913 147L956 124M870 159L913 147L956 170M870 182L913 166L956 147" fill="none" stroke="#8fe7ff" stroke-width="1.4" opacity=".72"/>
+      <circle cx="870" cy="113" r="3.7" fill="#a8dfff"/>
+      <circle cx="870" cy="136" r="3.7" fill="#a8dfff"/>
+      <circle cx="870" cy="159" r="3.7" fill="#a8dfff"/>
+      <circle cx="870" cy="182" r="3.7" fill="#a8dfff"/>
+      <circle cx="913" cy="109" r="4" fill="#79d8ff"/>
+      <circle cx="913" cy="128" r="4" fill="#79d8ff"/>
+      <circle cx="913" cy="147" r="5" fill="#e4f9ff"/>
+      <circle cx="913" cy="166" r="4" fill="#79d8ff"/>
+      <circle cx="913" cy="185" r="4" fill="#79d8ff"/>
+      <circle cx="956" cy="124" r="4" fill="#b9ecff"/>
+      <circle cx="956" cy="147" r="4" fill="#b9ecff"/>
+      <circle cx="956" cy="170" r="4" fill="#b9ecff"/>
+    <circle cx="913" cy="147" r="9" fill="none" stroke="#9eeaff" stroke-width="1.5" opacity=".5">
+      <animate attributeName="r" values="8;12;8" dur="3.4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values=".5;0;.5" dur="3.4s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  <text x="914" y="235" text-anchor="middle" fill="#a9bdd9" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2">1D CNN</text>
+
+  <!-- Illustrative eight-class output; index 6 is highlighted for visual clarity. -->
+  <g aria-hidden="true">
+    <text x="1018" y="70" fill="#a9bdd9" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5">8 CLASS SCORES</text>
+    <g stroke="#9bb7d9" stroke-width="1" opacity=".2">
+      <path d="M1018 112H1160M1018 155H1160M1018 200H1160"/>
+    </g>
+    <rect x="1024" y="165" width="10" height="35" rx="2.4" fill="#79a9e8" opacity="0.82"/>
+    <text x="1029" y="216" text-anchor="middle" fill="#8fa9c8" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700">0</text>
+    <rect x="1041" y="145" width="10" height="55" rx="2.4" fill="#79a9e8" opacity="0.82"/>
+    <text x="1046" y="216" text-anchor="middle" fill="#8fa9c8" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700">1</text>
+    <rect x="1058" y="151" width="10" height="49" rx="2.4" fill="#79a9e8" opacity="0.82"/>
+    <text x="1063" y="216" text-anchor="middle" fill="#8fa9c8" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700">2</text>
+    <rect x="1075" y="160" width="10" height="40" rx="2.4" fill="#79a9e8" opacity="0.82"/>
+    <text x="1080" y="216" text-anchor="middle" fill="#8fa9c8" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700">3</text>
+    <rect x="1092" y="142" width="10" height="58" rx="2.4" fill="#79a9e8" opacity="0.82"/>
+    <text x="1097" y="216" text-anchor="middle" fill="#8fa9c8" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700">4</text>
+    <rect x="1109" y="167" width="10" height="33" rx="2.4" fill="#79a9e8" opacity="0.82"/>
+    <text x="1114" y="216" text-anchor="middle" fill="#8fa9c8" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700">5</text>
+    <rect x="1126" y="113" width="10" height="87" rx="2.4" fill="url(#winning-bar)" opacity="1"/>
+    <text x="1131" y="216" text-anchor="middle" fill="#ffd565" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700">6</text>
+    <rect x="1143" y="153" width="10" height="47" rx="2.4" fill="#79a9e8" opacity="0.82"/>
+    <text x="1148" y="216" text-anchor="middle" fill="#8fa9c8" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700">7</text>
+    <rect x="1126" y="113" width="10" height="87" rx="2.4" fill="#ffd550" opacity=".3" filter="url(#soft-glow)">
+      <animate attributeName="opacity" values=".18;.45;.18" dur="3.4s" repeatCount="indefinite"/>
+    </rect>
+    <text x="1089" y="235" text-anchor="middle" fill="#8fa9c8" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" letter-spacing="1">ARGMAX → 6</text>
+  </g>
+</svg>

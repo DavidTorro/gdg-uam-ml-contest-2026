@@ -1,19 +1,23 @@
-# Entorno y cachés
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.ipynb_checkpoints/
-.DS_Store
+# Submission branch: only the inference files and public documentation belong in the checkout.
+/*
+!/.gitignore
+!/README.md
+!/README.es.md
+!/model.py
+!/requirements.txt
+!/assets/
+!/models/
+!/src/
 
-# Datos y resultados locales
-data/
-results/
-experiments/
+/assets/*
+!/assets/banner.svg
 
-# Configuración local sensible
-.env
-.env.*
-!.env.example
+/models/*
+!/models/exp033.sesgo.onnx
+
+/src/*
+!/src/__init__.py
+!/src/caracteristicas.py
+!/src/preparacion_numba.py
+!/src/red_numpy.py
+!/src/red_onnx.py
