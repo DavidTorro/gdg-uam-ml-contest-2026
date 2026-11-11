@@ -40,7 +40,9 @@ class Model:
         if pesos.suffix == ".pt":
             import torch
             from src.red_convolucional import RedConvolucional, preparar_muestra
+            from src.red_compacta import RedCompacta
             from src.red_dos_rutas import RedDosRutas
+            from src.red_dos_rutas_gate import RedDosRutasGate
             from src.red_multiescala import RedMultiescala
 
             torch.set_num_threads(1)
@@ -51,8 +53,12 @@ class Model:
             tipo_red = artefacto.get("red", "base")
             if tipo_red == "multiescala":
                 self.red = RedMultiescala(ancho=int(artefacto.get("ancho", 1)))
+            elif tipo_red == "compacta":
+                self.red = RedCompacta()
             elif tipo_red == "dos_rutas":
                 self.red = RedDosRutas(ancho=int(artefacto.get("ancho", 1)))
+            elif tipo_red == "dos_rutas_gate":
+                self.red = RedDosRutasGate(ancho=int(artefacto.get("ancho", 1)))
             elif tipo_red == "base":
                 self.red = RedConvolucional(ancho=int(artefacto.get("ancho", 1)),
                                             fusion_tardia=bool(artefacto.get("fusion_tardia", False)))

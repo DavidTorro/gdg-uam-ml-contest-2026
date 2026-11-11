@@ -1,0 +1,13 @@
+{
+  "protocolo": "selectivo_01",
+  "fraccion_entre_predichas_6_7": 0.2,
+  "umbral_margen_6_7": 0.7819924354553223,
+  "n_demo_sin_etiquetas": 400,
+  "n_predichas_6_7": 101,
+  "n_activaciones_demo": 20,
+  "sha256_fuentes": {
+    "data/test_demo.npz": "03fce51b3dacfaaa04418c4907def59874c4b6963c0561c9ccac83bbca90aac0",
+    "models/exp033.sesgo.onnx": "497a25d97e37b5c8dd9acfe05175ca500da5235e734f2fbfc945851acaa10489"
+  },
+  "limite": "El demo se usa solo para fijar la fracción de activaciones; no se leen sus etiquetas."
+}

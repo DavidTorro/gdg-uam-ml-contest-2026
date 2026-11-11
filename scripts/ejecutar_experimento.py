@@ -56,8 +56,14 @@ def main() -> None:
                         help="CNN: mezcla señales y etiquetas simuladas")
     parser.add_argument("--peso-alineacion-demo", type=float, default=0.0,
                         help="CNN: alinea representaciones de train con demo sin leer sus etiquetas")
+    parser.add_argument("--inicializar-pesos", default=None, help="CNN: checkpoint .pt inicial")
+    parser.add_argument("--peso-destilacion", type=float, default=0.0,
+                        help="CNN: KL frente al cuádruple fijo exp033+034+051+053")
+    parser.add_argument("--peso-retencion-67", type=float, default=0.0,
+                        help="CNN: conserva márgenes correctos 6/7 de exp033")
+    parser.add_argument("--temperatura-destilacion", type=float, default=2.0)
     parser.add_argument("--ancho", type=int, default=1, help="CNN: multiplica los filtros de la red")
-    parser.add_argument("--red", choices=("base", "multiescala", "dos_rutas"), default="base",
+    parser.add_argument("--red", choices=("base", "compacta", "multiescala", "dos_rutas", "dos_rutas_gate"), default="base",
                         help="CNN: arquitectura temporal; dos_rutas mezcla patrones conjuntos y por canal")
     parser.add_argument("--fusion-tardia", action="store_true",
                         help="CNN: procesa cada canal por separado hasta el resumen final")
@@ -118,11 +124,19 @@ def main() -> None:
         parser.error("mixup y alineación demo requieren CNN y --simular-examen")
     if sum(bool(valor) for valor in (args.peso_consistencia_vistas, args.mixup_alpha, args.peso_alineacion_demo)) > 1:
         parser.error("Elige solo una de consistencia, mixup o alineación demo")
+    if not 0.0 <= args.peso_destilacion < 1.0 or not math.isfinite(args.peso_destilacion):
+        parser.error("--peso-destilacion debe estar entre 0 y 1")
+    if args.peso_retencion_67 < 0 or not math.isfinite(args.peso_retencion_67):
+        parser.error("--peso-retencion-67 debe ser finito y no negativo")
+    if args.temperatura_destilacion <= 0 or not math.isfinite(args.temperatura_destilacion):
+        parser.error("--temperatura-destilacion debe ser positiva")
     if args.arquitectura == "cnn" and (args.aumento_ritmo or args.temporales or args.extendidas):
         parser.error("--aumento-ritmo, --temporales y --extendidas solo se usan con histgb")
     if args.red != "base" and (args.arquitectura != "cnn" or args.fusion_tardia):
         parser.error("--red multiescala/dos_rutas requiere CNN y no admite --fusion-tardia")
-    if args.arquitectura != "cnn" and (args.indices_entrenamiento or args.simular_examen or args.sin_atajos or args.sin_grupo or args.prob_grupo_cero or args.sin_escala or args.prob_escala_cero or args.equilibrar or args.peso_clase_6 != 1.0 or args.igualar_correlacion_67 or args.peso_consistencia_vistas or args.mixup_alpha or args.peso_alineacion_demo or args.min_libre_gib or args.ancho != 1 or args.fusion_tardia
+    if args.red == "compacta" and args.ancho != 1:
+        parser.error("La red compacta solo admite --ancho 1")
+    if args.arquitectura != "cnn" and (args.indices_entrenamiento or args.simular_examen or args.sin_atajos or args.sin_grupo or args.prob_grupo_cero or args.sin_escala or args.prob_escala_cero or args.equilibrar or args.peso_clase_6 != 1.0 or args.igualar_correlacion_67 or args.peso_consistencia_vistas or args.mixup_alpha or args.peso_alineacion_demo or args.inicializar_pesos or args.peso_destilacion or args.peso_retencion_67 or args.min_libre_gib or args.ancho != 1 or args.fusion_tardia
                                        or args.elegir_epoca != "control"):
         parser.error("Las opciones de simulador, auxiliares, pesos, ancho, fusión y elección de época solo se usan con cnn")
     if args.aumento_ritmo and not args.aumento_ruido:
@@ -166,7 +180,12 @@ def main() -> None:
                           "--peso-consistencia-vistas", str(args.peso_consistencia_vistas),
                           "--mixup-alpha", str(args.mixup_alpha),
                           "--peso-alineacion-demo", str(args.peso_alineacion_demo),
+                          "--peso-destilacion", str(args.peso_destilacion),
+                          "--peso-retencion-67", str(args.peso_retencion_67),
+                          "--temperatura-destilacion", str(args.temperatura_destilacion),
                           "--ajustes-simulador", args.ajustes_simulador]
+        if args.inicializar_pesos:
+            entrenamiento += ["--inicializar-pesos", args.inicializar_pesos]
         if args.indices_entrenamiento:
             entrenamiento += ["--indices-entrenamiento", args.indices_entrenamiento]
         for activo, opcion in ((args.aumento_ruido, "--aumento-ruido"), (args.simular_examen, "--simular-examen"),
@@ -216,6 +235,10 @@ def main() -> None:
             "peso_consistencia_vistas": args.peso_consistencia_vistas,
             "mixup_alpha": args.mixup_alpha,
             "peso_alineacion_demo": args.peso_alineacion_demo,
+            "inicializar_pesos": args.inicializar_pesos,
+            "peso_destilacion": args.peso_destilacion,
+            "peso_retencion_67": args.peso_retencion_67,
+            "temperatura_destilacion": args.temperatura_destilacion,
             "equilibrar": args.equilibrar,
             "ancho": args.ancho,
             "red": args.red,
@@ -244,10 +267,27 @@ def main() -> None:
                 sha256(ROOT / "src" / ("caracteristicas.py" if args.arquitectura == "histgb" else "red_convolucional.py")),
             **({"src/red_multiescala.py": sha256(ROOT / "src/red_multiescala.py")}
                if args.red == "multiescala" else {}),
+            **({"src/red_compacta.py": sha256(ROOT / "src/red_compacta.py")}
+               if args.red == "compacta" else {}),
             **({"src/red_dos_rutas.py": sha256(ROOT / "src/red_dos_rutas.py")}
                if args.red == "dos_rutas" else {}),
+            **({"src/red_dos_rutas_gate.py": sha256(ROOT / "src/red_dos_rutas_gate.py")}
+               if args.red == "dos_rutas_gate" else {}),
             f"scripts/{script_entrenamiento}": sha256(ROOT / "scripts" / script_entrenamiento),
             "src/simulador.py": sha256(ROOT / "src/simulador.py"),
+            **({args.inicializar_pesos: sha256(ROOT / args.inicializar_pesos)}
+               if args.inicializar_pesos else {}),
+            **({"models/exp033.sesgo.json": sha256(ROOT / "models/exp033.sesgo.json")}
+               if args.peso_retencion_67 else {}),
+            **({f"models/{nombre}.pt": sha256(ROOT / f"models/{nombre}.pt")
+                for nombre in ("exp033", "exp034", "exp051", "exp053")}
+               if args.peso_destilacion else {}),
+            **({f"models/{nombre}.sesgo.json": sha256(ROOT / f"models/{nombre}.sesgo.json")
+                for nombre in ("exp033", "exp034")}
+               if args.peso_destilacion else {}),
+            **({f"src/{nombre}.py": sha256(ROOT / f"src/{nombre}.py")
+                for nombre in ("red_multiescala", "red_dos_rutas")}
+               if args.peso_destilacion else {}),
             "harness.py": sha256(HARNESS),
             "pesos": sha256(pesos),
         },

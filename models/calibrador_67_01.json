@@ -1,0 +1,37 @@
+{
+  "format": "gdg-calibrador-67-v1",
+  "threshold": 0.7819924354553223,
+  "features": [
+    "exp033_logit6_minus_logit7",
+    "exp051_logit6_minus_logit7"
+  ],
+  "mean": [
+    -0.01186500582844019,
+    -1.4133774042129517
+  ],
+  "scale": [
+    0.47037389874458313,
+    2.036336660385132
+  ],
+  "coef": [
+    -0.04445808753371239,
+    -0.5689509510993958
+  ],
+  "intercept": 0.061809614300727844,
+  "class_if_decision_nonnegative": 7,
+  "class_otherwise": 6,
+  "C": 0.1,
+  "class_weight": "balanced",
+  "seed": 2026,
+  "n_activated": 201,
+  "n_fit": 181,
+  "n_fit_6": 63,
+  "n_fit_7": 118,
+  "source_sha256": {
+    "data/val_exp052_select.npz": "e4b008c800e3b791a2d3b0893a19b46915d69dd188858f0e09d98c84017eb083",
+    "models/selectivo_01.json": "48b8b743823833bf62adfb35131353bb079f4aac3445e6e6a49bebc4caacb733",
+    "models/exp033.pt": "d5851b7aa7479c53336dcca5b3fa5a7513ab0d60142c7a30a7294e7a35974cf0",
+    "models/exp051.pt": "a34b6c8d319d92388364602afc40111da51c8937f5f59c1e873123343fbd0b40"
+  },
+  "limit": "Ajustado solo en la mitad de selección; score en este bloque no es validación independiente."
+}

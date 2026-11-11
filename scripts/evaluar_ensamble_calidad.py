@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 from competition_api import load_dataset
 from src.red_convolucional import RedConvolucional, preparar_lote
+from src.red_compacta import RedCompacta
 from src.red_dos_rutas import RedDosRutas
 from src.red_multiescala import RedMultiescala
 
@@ -50,6 +51,8 @@ def cargar(nombre: str) -> tuple[torch.nn.Module, dict, np.ndarray]:
     artefacto = torch.load(ROOT / f"models/{nombre}.pt", map_location="cpu", weights_only=True)
     if artefacto.get("red") == "multiescala":
         red = RedMultiescala(ancho=int(artefacto.get("ancho", 1)))
+    elif artefacto.get("red") == "compacta":
+        red = RedCompacta()
     elif artefacto.get("red") == "dos_rutas":
         red = RedDosRutas(ancho=int(artefacto.get("ancho", 1)))
     else:

@@ -18,6 +18,7 @@ import torch
 from evaluar_ensamble_calidad import resumir, score
 from src.red_convolucional import RedConvolucional, preparar_lote
 from src.red_dos_rutas import RedDosRutas
+from src.red_dos_rutas_gate import RedDosRutasGate
 from src.simulador import PARAMETROS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,6 +79,8 @@ def load_model(model_id: str, group: str, fold: dict) -> tuple[torch.nn.Module, 
         model = RedConvolucional(ancho=int(artifact["ancho"]))
     elif train["red"] == "dos_rutas":
         model = RedDosRutas(ancho=int(artifact["ancho"]))
+    elif train["red"] == "dos_rutas_gate":
+        model = RedDosRutasGate(ancho=int(artifact["ancho"]))
     else:
         raise ValueError(f"{model_id}: arquitectura fuera de esta comparación fijada")
     model.load_state_dict(artifact["state_dict"])

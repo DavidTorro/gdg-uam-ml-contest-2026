@@ -20,7 +20,6 @@ from time import perf_counter
 
 import numpy as np
 import torch
-from sklearn.model_selection import train_test_split
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, TensorDataset
@@ -30,9 +29,18 @@ sys.path.insert(0, str(ROOT.parent / "ml-contest-materials"))
 sys.path.insert(0, str(ROOT))
 
 from src.red_convolucional import RedConvolucional, preparar_lote
+from src.red_compacta import RedCompacta
 from src.red_dos_rutas import RedDosRutas
+from src.red_dos_rutas_gate import RedDosRutasGate
 from src.red_multiescala import RedMultiescala
 from src.simulador import PARAMETROS, simular_examen
+
+
+def train_test_split(*args, **kwargs):
+    """Carga scikit-learn solo si esta corrida necesita crear una partición."""
+    from sklearn.model_selection import train_test_split as split
+
+    return split(*args, **kwargs)
 
 
 def aumentar_senales(serie: torch.Tensor, auxiliares: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -106,6 +114,26 @@ def perdida_coral(origen: torch.Tensor, objetivo: torch.Tensor) -> torch.Tensor:
     return (media_origen - media_objetivo).square().mean() + 0.25 * (cov_origen - cov_objetivo).square().mean()
 
 
+def perdida_retencion_67(logits: torch.Tensor, logits_maestro: torch.Tensor,
+                         etiquetas: torch.Tensor) -> torch.Tensor:
+    """Conserva el margen 6/7 del maestro cuando acertaba la etiqueta real.
+
+    El margen objetivo se limita a 2 logits para no perseguir la confianza extrema
+    del maestro. Los ejemplos que el maestro confundía no reciben esta pérdida.
+    """
+    mascara = (etiquetas == 6) | (etiquetas == 7)
+    if not bool(mascara.any()):
+        return logits.sum() * 0.0
+    signo = torch.where(etiquetas[mascara] == 6, 1.0, -1.0)
+    margen_maestro = signo * (logits_maestro[mascara, 6] - logits_maestro[mascara, 7])
+    aciertos = margen_maestro > 0
+    if not bool(aciertos.any()):
+        return logits.sum() * 0.0
+    margen_alumno = signo * (logits[mascara, 6] - logits[mascara, 7])
+    objetivo = margen_maestro[aciertos].detach().clamp(max=2.0)
+    return F.relu(objetivo - margen_alumno[aciertos]).mean()
+
+
 def nota_oficial(confusion: np.ndarray) -> float:
     """Fórmula del concurso sobre una matriz de confusión, sin el efecto de la velocidad"""
     n = confusion.sum(axis=1)
@@ -169,12 +197,19 @@ def main() -> None:
                         help="Mezcla señales y etiquetas simuladas; 0 desactiva")
     parser.add_argument("--peso-alineacion-demo", type=float, default=0.0,
                         help="Alinea representaciones de train simulado con demo sin usar sus etiquetas; 0 desactiva")
+    parser.add_argument("--inicializar-pesos", default=None,
+                        help="Checkpoint .pt del que parte esta corrida; no se modifica")
+    parser.add_argument("--peso-destilacion", type=float, default=0.0,
+                        help="Peso de KL frente al cuádruple fijo exp033+034+051+053; 0 desactiva")
+    parser.add_argument("--peso-retencion-67", type=float, default=0.0,
+                        help="Conserva márgenes correctos 6/7 de exp033 con su sesgo fijo; 0 desactiva")
+    parser.add_argument("--temperatura-destilacion", type=float, default=2.0)
     parser.add_argument("--elegir-epoca", choices=("control", "examen"), default="control",
                         help="control: menor pérdida en el 10 %% interno; examen: mejor nota en --archivo-examen")
     parser.add_argument("--archivo-examen", default="data/val_examen_v2.npz",
                         help="Examen de prácticas para elegir la época; val_examen.npz es el de exp022, con huella")
     parser.add_argument("--ancho", type=int, default=1, help="Multiplica los filtros de la red")
-    parser.add_argument("--red", choices=("base", "multiescala", "dos_rutas"), default="base",
+    parser.add_argument("--red", choices=("base", "compacta", "multiescala", "dos_rutas", "dos_rutas_gate"), default="base",
                         help="Arquitectura CNN; dos_rutas combina mezcla temprana y formas por canal")
     parser.add_argument("--fusion-tardia", action="store_true",
                         help="Convoluciones independientes por canal; fusiona solo tras resumirlos")
@@ -200,6 +235,9 @@ def main() -> None:
         parser.error("--min-libre-gib debe ser finito y no negativo")
     if args.red != "base" and args.fusion_tardia:
         parser.error("--fusion-tardia solo existe para la red base")
+    if args.red == "dos_rutas_gate" and any((args.peso_consistencia_vistas, args.mixup_alpha,
+                                              args.peso_alineacion_demo)):
+        parser.error("dos_rutas_gate no se combina con otras pérdidas experimentales")
     if not 0.0 <= args.prob_escala_cero <= 1.0:
         parser.error("--prob-escala-cero debe estar entre 0 y 1")
     if not 0.0 <= args.prob_grupo_cero <= 1.0 or (args.sin_grupo and args.prob_grupo_cero):
@@ -218,11 +256,30 @@ def main() -> None:
         parser.error("mixup y alineación demo requieren --simular-examen")
     if sum(bool(valor) for valor in (args.peso_consistencia_vistas, args.mixup_alpha, args.peso_alineacion_demo)) > 1:
         parser.error("Elige solo una de consistencia, mixup o alineación demo para atribuir el resultado")
+    if not 0.0 <= args.peso_destilacion < 1.0 or not np.isfinite(args.peso_destilacion):
+        parser.error("--peso-destilacion debe estar entre 0 (incluido) y 1 (excluido)")
+    if args.peso_retencion_67 < 0 or not np.isfinite(args.peso_retencion_67):
+        parser.error("--peso-retencion-67 debe ser finito y no negativo")
+    if args.temperatura_destilacion <= 0 or not np.isfinite(args.temperatura_destilacion):
+        parser.error("--temperatura-destilacion debe ser positiva")
+    if args.peso_destilacion and (args.red != "base" or not args.inicializar_pesos
+            or not args.simular_examen or not args.sin_atajos or args.sin_grupo or args.sin_escala
+            or args.peso_consistencia_vistas or args.mixup_alpha or args.peso_alineacion_demo
+            or args.aumento_ruido or args.igualar_correlacion_67 or args.prob_grupo_cero
+            or args.prob_escala_cero):
+        parser.error("La destilación fija requiere CNN base inicializada, simulador, sin atajos y sin otras pérdidas o perturbaciones")
+    if args.peso_retencion_67 and (args.red != "base" or args.inicializar_pesos != "models/exp033.pt"
+            or not args.simular_examen or not args.sin_atajos or not args.equilibrar
+            or args.peso_destilacion or args.peso_consistencia_vistas or args.mixup_alpha
+            or args.peso_alineacion_demo or args.aumento_ruido or args.igualar_correlacion_67
+            or args.sin_grupo or args.sin_escala or args.prob_grupo_cero or args.prob_escala_cero):
+        parser.error("La retención 6/7 requiere la receta base de afinamiento exp033 sin otras intervenciones")
 
     fuente = ROOT / "data/train_90k.npz"
     examen = ROOT / args.archivo_examen
     if args.elegir_epoca == "examen" and not examen.is_file():
         parser.error(f"Falta {args.archivo_examen}: créalo con scripts/calibrar_simulador.py --guardar-val")
+    print(f"Preparando {args.id}: cargando datos y red...", flush=True)
     datos = dict(np.load(fuente))
     total = len(datos["labels"])
     if not 80 <= args.muestras <= total:
@@ -298,7 +355,59 @@ def main() -> None:
         objetivo_a = objetivo_a.to(dispositivo)
     red = (RedMultiescala(ancho=args.ancho) if args.red == "multiescala"
            else RedDosRutas(ancho=args.ancho) if args.red == "dos_rutas"
+           else RedDosRutasGate(ancho=args.ancho) if args.red == "dos_rutas_gate"
+           else RedCompacta() if args.red == "compacta"
            else RedConvolucional(ancho=args.ancho, fusion_tardia=args.fusion_tardia)).to(dispositivo)
+    if args.red == "compacta" and args.ancho != 1:
+        parser.error("La red compacta solo admite --ancho 1")
+    sha_inicial = None
+    if args.inicializar_pesos:
+        ruta_inicial = ROOT / args.inicializar_pesos
+        if ruta_inicial.suffix != ".pt" or not ruta_inicial.resolve().is_relative_to(ROOT) or not ruta_inicial.is_file():
+            parser.error("--inicializar-pesos debe señalar un .pt existente dentro del repositorio")
+        inicial = torch.load(ruta_inicial, map_location="cpu", weights_only=True)
+        if inicial.get("formato") != "gdg-cnn-v1":
+            parser.error("El checkpoint inicial no tiene el formato CNN esperado")
+        for campo, esperado in (("red", args.red), ("ancho", args.ancho),
+                                ("sin_atajos", args.sin_atajos), ("sin_escala", args.sin_escala),
+                                ("sin_grupo", args.sin_grupo)):
+            valor = inicial.get(campo, "base" if campo == "red" else False)
+            if valor != esperado:
+                parser.error(f"El checkpoint inicial tiene {campo}={valor!r}; esperado {esperado!r}")
+        red.load_state_dict(inicial["state_dict"])
+        sha_inicial = hashlib.sha256(ruta_inicial.read_bytes()).hexdigest()
+    profesores = []
+    sha_profesores = {}
+    maestro_retencion = sesgo_retencion = None
+    sha_sesgo_retencion = None
+    if args.peso_retencion_67:
+        ruta_sesgo = ROOT / "models/exp033.sesgo.json"
+        if not ruta_sesgo.is_file():
+            parser.error(f"Falta {ruta_sesgo}")
+        sesgo_info = json.loads(ruta_sesgo.read_text(encoding="utf-8"))
+        if (sesgo_info.get("formato") != "gdg-sesgo-v1"
+                or sesgo_info.get("pesos") != "models/exp033.pt"
+                or len(sesgo_info.get("sesgo", [])) != 8):
+            parser.error("El sesgo de exp033 no tiene el formato esperado")
+        sesgo_retencion = torch.as_tensor(sesgo_info["sesgo"], dtype=torch.float32, device=dispositivo)
+        maestro_retencion = RedConvolucional(ancho=args.ancho).to(dispositivo)
+        maestro_retencion.load_state_dict(inicial["state_dict"])
+        maestro_retencion.eval().requires_grad_(False)
+        sha_sesgo_retencion = hashlib.sha256(ruta_sesgo.read_bytes()).hexdigest()
+    if args.peso_destilacion:
+        from evaluar_ensamble_calidad import cargar
+
+        for nombre in ("exp033", "exp034", "exp051", "exp053"):
+            maestro, artefacto, sesgo = cargar(nombre)
+            if not artefacto.get("sin_atajos") or artefacto.get("sin_escala") or artefacto.get("sin_grupo"):
+                parser.error(f"{nombre}: preparación distinta de la fijada para destilar")
+            profesores.append((maestro.to(dispositivo).eval(), torch.as_tensor(sesgo, device=dispositivo)))
+            for ruta in (ROOT / f"models/{nombre}.pt", ROOT / f"models/{nombre}.sesgo.json"):
+                if ruta.is_file():
+                    sha_profesores[str(ruta.relative_to(ROOT))] = hashlib.sha256(ruta.read_bytes()).hexdigest()
+    # Cargar los maestros construye capas y consumiría números aleatorios solo
+    # en la candidata. Reiniciar mantiene iguales simulaciones y lotes del control.
+    torch.manual_seed(args.semilla)
     optimizador = torch.optim.AdamW(red.parameters(), lr=args.lr, weight_decay=0.01)
     plan = torch.optim.lr_scheduler.CosineAnnealingLR(optimizador, T_max=args.epocas)
     conteo = np.bincount(etiquetas, minlength=8)
@@ -314,6 +423,7 @@ def main() -> None:
     inicio_ajuste = perf_counter()
     carpeta.mkdir(parents=True, exist_ok=True)
     progreso = carpeta / "progreso.json"
+    print(f"{args.id}: datos preparados en {segundos_preparacion:.1f} s; iniciando {args.epocas} épocas", flush=True)
 
     for epoca in range(1, args.epocas + 1):
         comprobar_disco(args.min_libre_gib)
@@ -353,6 +463,8 @@ def main() -> None:
         suma_supervisada = 0.0
         suma_consistencia = 0.0
         suma_alineacion = 0.0
+        suma_destilacion = 0.0
+        suma_retencion_67 = 0.0
         for numero_lote, lote in enumerate(cargador):
             if numero_lote % 25 == 0:
                 comprobar_disco(args.min_libre_gib)
@@ -412,6 +524,10 @@ def main() -> None:
                 perdida = supervisada + args.peso_alineacion_demo * alineacion
                 suma_supervisada += supervisada.item() * len(etiqueta)
                 suma_alineacion += alineacion.item() * len(etiqueta)
+            elif args.red == "dos_rutas_gate":
+                logits, logits_conjunta, logits_canal, _ = red(serie, auxiliar, devolver_componentes=True)
+                perdida = (criterio(logits, etiqueta)
+                           + 0.25 * (criterio(logits_conjunta, etiqueta) + criterio(logits_canal, etiqueta)))
             else:
                 logits = red(serie, auxiliar)
             if args.peso_consistencia_vistas:
@@ -421,8 +537,27 @@ def main() -> None:
                 perdida = supervisada + args.peso_consistencia_vistas * consistencia
                 suma_supervisada += supervisada.item() * len(etiqueta)
                 suma_consistencia += consistencia.item() * len(etiqueta)
-            elif not args.mixup_alpha and not args.peso_alineacion_demo:
+            elif not args.mixup_alpha and not args.peso_alineacion_demo and args.red != "dos_rutas_gate":
                 perdida = criterio(logits, etiqueta)
+            if args.peso_destilacion:
+                temperatura = args.temperatura_destilacion
+                # KL necesita guardar el objetivo para derivar respecto al alumno.
+                # no_grad congela maestros sin crear tensores de inference_mode.
+                with torch.no_grad():
+                    probabilidades = torch.stack([
+                        F.softmax((maestro(serie, auxiliar) + sesgo) / temperatura, dim=1)
+                        for maestro, sesgo in profesores
+                    ]).mean(dim=0)
+                destilacion = F.kl_div(F.log_softmax(logits / temperatura, dim=1),
+                                       probabilidades, reduction="batchmean") * temperatura ** 2
+                perdida = (1.0 - args.peso_destilacion) * perdida + args.peso_destilacion * destilacion
+                suma_destilacion += destilacion.item() * len(etiqueta)
+            if args.peso_retencion_67:
+                with torch.no_grad():
+                    logits_maestro = maestro_retencion(serie, auxiliar) + sesgo_retencion
+                retencion = perdida_retencion_67(logits, logits_maestro, etiqueta)
+                perdida = perdida + args.peso_retencion_67 * retencion
+                suma_retencion_67 += retencion.item() * len(etiqueta)
             perdida.backward()
             optimizador.step()
             perdida_entrenamiento += perdida.item() * len(etiqueta)
@@ -446,6 +581,8 @@ def main() -> None:
             "perdida_supervisada": suma_supervisada / len(etiquetas) if (args.peso_consistencia_vistas or args.peso_alineacion_demo) else None,
             "divergencia_vistas": suma_consistencia / len(etiquetas) if args.peso_consistencia_vistas else None,
             "perdida_alineacion_demo": suma_alineacion / len(etiquetas) if args.peso_alineacion_demo else None,
+            "perdida_destilacion": suma_destilacion / len(etiquetas) if args.peso_destilacion else None,
+            "perdida_retencion_67": suma_retencion_67 / len(etiquetas) if args.peso_retencion_67 else None,
             "perdida_control": perdida_control,
             "acierto_control": float(np.trace(confusion) / confusion.sum()),
             "nota_control": nota_oficial(confusion),
@@ -490,12 +627,23 @@ def main() -> None:
         "peso_consistencia_vistas": args.peso_consistencia_vistas,
         "mixup_alpha": args.mixup_alpha,
         "peso_alineacion_demo": args.peso_alineacion_demo,
+        "inicializar_pesos": args.inicializar_pesos,
+        "sha256_inicializar_pesos": sha_inicial,
+        "peso_destilacion": args.peso_destilacion,
+        "peso_retencion_67": args.peso_retencion_67,
+        "sha256_sesgo_retencion": sha_sesgo_retencion,
+        "temperatura_destilacion": args.temperatura_destilacion,
+        "sha256_profesores": sha_profesores,
         "min_libre_gib": args.min_libre_gib,
     }, destino)
     resumen = {
         "modelo": ("Red multiescala 1D" if args.red == "multiescala"
+                   else "Red compacta 1D" if args.red == "compacta"
+                   else "Red de dos rutas con puerta de calidad" if args.red == "dos_rutas_gate"
                    else "Red de dos rutas 1D" if args.red == "dos_rutas" else "Red convolucional 1D")
-                  + (" · simulador de examen" if args.simular_examen else ""),
+                  + (" · simulador de examen" if args.simular_examen else "")
+                  + (" · destilación cuádruple" if args.peso_destilacion else ""
+                     if not args.inicializar_pesos else " · reajuste desde checkpoint"),
         "id": args.id,
         "fuente": fuente.name,
         "indices_entrenamiento": str(ruta_indices.relative_to(ROOT)) if ruta_indices else None,
@@ -516,6 +664,13 @@ def main() -> None:
         "peso_consistencia_vistas": args.peso_consistencia_vistas,
         "mixup_alpha": args.mixup_alpha,
         "peso_alineacion_demo": args.peso_alineacion_demo,
+        "inicializar_pesos": args.inicializar_pesos,
+        "sha256_inicializar_pesos": sha_inicial,
+        "peso_destilacion": args.peso_destilacion,
+        "peso_retencion_67": args.peso_retencion_67,
+        "sha256_sesgo_retencion": sha_sesgo_retencion,
+        "temperatura_destilacion": args.temperatura_destilacion,
+        "sha256_profesores": sha_profesores,
         "min_libre_gib": args.min_libre_gib,
         "equilibrar": args.equilibrar,
         "elegir_epoca": args.elegir_epoca,
