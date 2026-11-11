@@ -7,18 +7,18 @@
   <img src="https://img.shields.io/badge/-NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white" alt="NumPy">
   <img src="https://img.shields.io/badge/-Numba-00A3E0?style=for-the-badge&logo=numba&logoColor=white" alt="Numba">
   <img src="https://img.shields.io/badge/-ONNX%20Runtime-005CED?style=for-the-badge&logo=onnx&logoColor=white" alt="ONNX Runtime">
-  <img src="https://img.shields.io/badge/-Google%20Colab-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white" alt="Google Colab (benchmark)">
-  <br>
+  <a href="https://colab.research.google.com/github/DavidTorro/gdg-uam-ml-contest-2026/blob/main/colab.ipynb"><img src="https://img.shields.io/badge/-Google%20Colab-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white" alt="Run the submission check in Google Colab"></a>
   <a href="https://github.com/DavidTorro">
     <img src="https://img.shields.io/badge/author-David%20Torr%C3%B3-181717?style=for-the-badge&logo=github&logoColor=white" alt="Author: David Torró">
   </a>
+  <p>
+    <img src="assets/language-en-active.svg" alt="English (current language)" width="56" height="30"><a href="README.es.md"><img src="assets/language-es-inactive.svg" alt="Leer en español" width="56" height="30"></a>
+  </p>
 </div>
 
 # GDG UAM ML Contest 2026
 
-[Leer en español](README.es.md)
-
-My individual entry for the [GDG UAM ML Contest 2026](https://github.com/GDG-UAM/ml-contest-materials). The task is to classify a four-channel, 256-step time series into one of eight classes. The official harness calls `predict` on one sample at a time and scores both accuracy and throughput.
+My individual entry for the [GDG UAM ML Contest 2026](https://gdguam.es/blog/guia-concurso-de-ml). The task is to classify a four-channel, 256-step time series into one of eight classes. The official harness calls `predict` on one sample at a time and scores both accuracy and throughput.
 
 ## Model
 
@@ -26,40 +26,124 @@ My individual entry for the [GDG UAM ML Contest 2026](https://github.com/GDG-UAM
 
 ## Demo results
 
-| Evaluation | Result |
-| --- | ---: |
-| Official `test_demo.npz` (400 distinct samples) | 338/400 correct · 84.5% accuracy · 3.779 score |
-| Colab throughput check (the same 400 demo samples repeated until 60 s of `predict`) | 120.576 score |
+![Results table: 338 of 400 correct on the official demo, 84.5% accuracy and 3.779 score; 120.576 score in Colab with the same samples repeated](assets/results-table-en.svg)
 
-These are checks on the public demo, **not a hidden-test score or an estimate of it**. The repeated-demo run measures the inference path under a longer time budget; it does not add independent test examples.
+A short Colab timing of 0.1064 ms per prediction suggested roughly 142 points if sustained. The full 60 s harness run averaged 0.1473 ms across 407,260 predictions and scored 120.576 on the repeated demo. With the same sample mix, the score scales roughly with the square root of the number of answers; the lower sustained throughput explains the difference. These runs reuse the same 400 public samples.
 
 ## Submission files
 
-| Path | Purpose |
-| --- | --- |
-| `model.py` | Official `Model` entry point |
-| `models/exp033.sesgo.onnx` | Trained CNN and embedded logit adjustment |
-| `src/red_onnx.py` | ONNX Runtime inference and I/O Binding |
-| `src/preparacion_numba.py` | JIT preprocessing into reusable buffers |
-| `src/red_numpy.py` | NumPy preprocessing fallback used by the ONNX module |
-| `src/caracteristicas.py`, `src/__init__.py` | Imports required by the entry point |
-| `requirements.txt` | Pinned inference dependencies |
+```text
+.
+├── model.py                    # Official Model entry point
+├── models/
+│   └── exp033.sesgo.onnx       # CNN weights and class-6 adjustment
+├── src/
+│   ├── __init__.py             # Python package marker
+│   ├── caracteristicas.py      # Feature helpers imported by model.py
+│   ├── preparacion_numba.py    # JIT preprocessing into buffers
+│   ├── red_numpy.py            # NumPy preprocessing fallback
+│   └── red_onnx.py             # ONNX Runtime and I/O Binding
+└── requirements.txt            # Pinned inference dependencies
+```
 
 The official harness provides `competition_api.py`; it is not part of this repository.
 
 ## Test from a fresh clone
 
-Run these commands in a clean Python 3.10+ environment:
+Choose your environment below. The local commands need Git, Python 3.10 or newer, and `curl`. Run each block in order from a new directory.
+
+### macOS · Terminal
+
+**1. Clone the submission and official materials**
 
 ```bash
+mkdir gdg-uam-submission-check
+cd gdg-uam-submission-check
 git clone https://github.com/DavidTorro/gdg-uam-ml-contest-2026.git submission-check
 git clone https://github.com/GDG-UAM/ml-contest-materials.git
-python -m pip install -r submission-check/requirements.txt
-curl -L --create-dirs -o ml-contest-materials/data/test_demo.npz \
+```
+
+**2. Create the Python environment and install inference dependencies**
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r submission-check/requirements.txt
+```
+
+**3. Download the public demo and run the official harness**
+
+```bash
+curl -fL --create-dirs -o ml-contest-materials/data/test_demo.npz \
   https://github.com/GDG-UAM/ml-contest-materials/releases/latest/download/test_demo.npz
 cd ml-contest-materials
-python harness.py evaluate --model ../submission-check/model.py \
+../.venv/bin/python harness.py evaluate --model ../submission-check/model.py \
   --source file:data/test_demo.npz --runs 1
 ```
 
-The complete development snapshot, including training scripts and experiments, remains available in [commit `ffb3255`](https://github.com/DavidTorro/gdg-uam-ml-contest-2026/tree/ffb3255).
+### Linux · Terminal
+
+**1. Clone the submission and official materials**
+
+```bash
+mkdir gdg-uam-submission-check
+cd gdg-uam-submission-check
+git clone https://github.com/DavidTorro/gdg-uam-ml-contest-2026.git submission-check
+git clone https://github.com/GDG-UAM/ml-contest-materials.git
+```
+
+**2. Create the Python environment and install inference dependencies**
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r submission-check/requirements.txt
+```
+
+**3. Download the public demo and run the official harness**
+
+```bash
+curl -fL --create-dirs -o ml-contest-materials/data/test_demo.npz \
+  https://github.com/GDG-UAM/ml-contest-materials/releases/latest/download/test_demo.npz
+cd ml-contest-materials
+../.venv/bin/python harness.py evaluate --model ../submission-check/model.py \
+  --source file:data/test_demo.npz --runs 1
+```
+
+### Windows · PowerShell
+
+**1. Clone the submission and official materials**
+
+```powershell
+New-Item -ItemType Directory gdg-uam-submission-check
+Set-Location gdg-uam-submission-check
+git clone https://github.com/DavidTorro/gdg-uam-ml-contest-2026.git submission-check
+git clone https://github.com/GDG-UAM/ml-contest-materials.git
+```
+
+**2. Create the Python environment and install inference dependencies**
+
+```powershell
+py -3 -m venv .venv
+& .\.venv\Scripts\python.exe -m pip install -r .\submission-check\requirements.txt
+```
+
+**3. Download the public demo and run the official harness**
+
+```powershell
+curl.exe -fL --create-dirs -o ml-contest-materials\data\test_demo.npz `
+  https://github.com/GDG-UAM/ml-contest-materials/releases/latest/download/test_demo.npz
+Set-Location ml-contest-materials
+& ..\.venv\Scripts\python.exe harness.py evaluate --model ..\submission-check\model.py `
+  --source file:data/test_demo.npz --runs 1
+```
+
+The public demo should report **338 correct predictions out of 400** (84.5%). Runtime and latency depend on the computer.
+
+### Google Colab · no local setup
+
+The [English verification notebook](https://colab.research.google.com/github/DavidTorro/gdg-uam-ml-contest-2026/blob/main/colab.ipynb) runs the same check in a Colab CPU runtime. It clones both public repositories, installs the pinned inference dependencies, verifies the demo download by SHA-256, and calls the official harness.
+
+1. Open the notebook and connect to a **fresh CPU runtime**. If the runtime already contains a previous clone, choose **Runtime → Disconnect and delete runtime**, then reconnect.
+2. Choose **Runtime → Run all**. Colab runs the cells in order; the dependency installation and model setup can take a few minutes.
+3. Check the final **✅ PASS · public demo** table: 400 samples, 338 correct predictions, and a demo score of approximately 3.778906. The displayed commit is the revision cloned during that run; latency can vary.
+
+The notebook only downloads the public demo and does not train the model.

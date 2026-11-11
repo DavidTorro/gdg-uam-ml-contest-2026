@@ -3,6 +3,8 @@
 !/.gitignore
 !/README.md
 !/README.es.md
+!/colab.ipynb
+!/colab.es.ipynb
 !/model.py
 !/requirements.txt
 !/assets/
@@ -11,6 +13,12 @@
 
 /assets/*
 !/assets/banner.svg
+!/assets/language-en-active.svg
+!/assets/language-en-inactive.svg
+!/assets/language-es-active.svg
+!/assets/language-es-inactive.svg
+!/assets/results-table-en.svg
+!/assets/results-table-es.svg
 
 /models/*
 !/models/exp033.sesgo.onnx
