@@ -24,6 +24,8 @@ My individual entry for the [GDG UAM ML Contest 2026](https://gdguam.es/blog/gui
 
 `model.py` loads `models/exp033.sesgo.onnx` by default. It is a 1D CNN exported to ONNX, including the class-6 logit adjustment in the weight file. Inference uses ONNX Runtime on one CPU thread. Numba compiles preprocessing during setup; reusable buffers and ONNX Runtime I/O Binding reduce per-sample overhead. The default inference path does not require PyTorch or training data.
 
+The [approach note](APPROACH.md) explains how we chose and prepared the model.
+
 ## Demo results
 
 ![Results table: 338 of 400 correct on the official demo, 84.5% accuracy and 3.779 score; 120.576 score in Colab with the same samples repeated](assets/results-table-en.svg)

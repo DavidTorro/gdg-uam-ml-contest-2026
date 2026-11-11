@@ -24,6 +24,8 @@ Mi participación individual en el [GDG UAM ML Contest 2026](https://gdguam.es/b
 
 `model.py` carga por defecto `models/exp033.sesgo.onnx`. Es una CNN 1D exportada a ONNX, con el ajuste de la salida de la clase 6 incorporado en el propio peso. La inferencia usa ONNX Runtime en un hilo de CPU. Numba compila la preparación durante la inicialización; los buffers reutilizables y el I/O Binding de ONNX Runtime reducen el coste por muestra. La ruta de inferencia predeterminada no necesita PyTorch ni los datos de entrenamiento.
 
+La [nota sobre el proceso](APPROACH.es.md) explica cómo elegimos y preparamos el modelo.
+
 ## Resultados en el demo
 
 ![Tabla de resultados: 338 de 400 aciertos en el demo oficial, 84,5 % y 3,779 puntos; 120,576 puntos en Colab repitiendo las mismas muestras](assets/results-table-es.svg)
