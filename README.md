@@ -32,19 +32,7 @@ A short Colab timing of 0.1064 ms per prediction suggested roughly 142 points if
 
 ## Submission files
 
-```text
-.
-├── model.py                    # Official Model entry point
-├── models/
-│   └── exp033.sesgo.onnx       # CNN weights and class-6 adjustment
-├── src/
-│   ├── __init__.py             # Python package marker
-│   ├── caracteristicas.py      # Feature helpers imported by model.py
-│   ├── preparacion_numba.py    # JIT preprocessing into buffers
-│   ├── red_numpy.py            # NumPy preprocessing fallback
-│   └── red_onnx.py             # ONNX Runtime and I/O Binding
-└── requirements.txt            # Pinned inference dependencies
-```
+![Submission files table: model.py, the ONNX weight, five src modules, and requirements.txt with their purposes](assets/files-table-en.svg)
 
 The official harness provides `competition_api.py`; it is not part of this repository.
 
@@ -147,3 +135,7 @@ The [English verification notebook](https://colab.research.google.com/github/Dav
 3. Check the final **✅ PASS · public demo** table: 400 samples, 338 correct predictions, and a demo score of approximately 3.778906. The displayed commit is the revision cloned during that run; latency can vary.
 
 The notebook only downloads the public demo and does not train the model.
+
+## License
+
+The original source code, notebooks, documentation, and SVG assets in this repository are available under the [MIT License](LICENSE). The ONNX weight at `models/exp033.sesgo.onnx` is excluded: it is provided for evaluation of this contest entry, and no separate license for reuse is granted.

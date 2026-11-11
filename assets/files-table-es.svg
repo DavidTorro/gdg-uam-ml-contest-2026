@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="459" viewBox="0 0 900 459" role="img" aria-labelledby="title desc">
+  <title id="title">Tabla de archivos de entrega</title>
+  <desc id="desc">model.py: Punto de entrada Model; models/exp033.sesgo.onnx: CNN y ajuste de la clase 6; src/__init__.py: Marca el paquete Python; src/caracteristicas.py: Rasgos importados por model.py; src/preparacion_numba.py: Preparación JIT en buffers reutilizables; src/red_numpy.py: Preparación NumPy alternativa; src/red_onnx.py: ONNX Runtime e I/O Binding; requirements.txt: Dependencias de inferencia fijadas</desc>
+  <defs>
+    <linearGradient id="header" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#327cda"/>
+      <stop offset="1" stop-color="#1f5dae"/>
+    </linearGradient>
+    <clipPath id="outer"><rect x="1" y="1" width="898" height="457" rx="12"/></clipPath>
+  </defs>
+  <g clip-path="url(#outer)">
+    <rect width="900" height="459" fill="#172c49"/>
+    <rect x="1" y="1" width="898" height="42" fill="url(#header)"/>
+    <rect x="1" y="43" width="898" height="52" fill="#244264"/>
+    <rect x="1" y="95" width="898" height="52" fill="#1c3657"/>
+    <rect x="1" y="147" width="898" height="52" fill="#244264"/>
+    <rect x="1" y="199" width="898" height="52" fill="#1c3657"/>
+    <rect x="1" y="251" width="898" height="52" fill="#244264"/>
+    <rect x="1" y="303" width="898" height="52" fill="#1c3657"/>
+    <rect x="1" y="355" width="898" height="52" fill="#244264"/>
+    <rect x="1" y="407" width="898" height="52" fill="#1c3657"/>
+    <path d="M390 1V458 M1 43H899 M1 95H899 M1 147H899 M1 199H899 M1 251H899 M1 303H899 M1 355H899 M1 407H899" stroke="#7194b8" stroke-width="1" opacity=".55"/>
+  </g>
+  <rect x="1" y="1" width="898" height="457" rx="12" fill="none" stroke="#6f9fd0" stroke-width="2"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="25" y="28" fill="#fff" font-size="13" font-weight="700" letter-spacing="1.2">ARCHIVO</text>
+    <text x="414" y="28" fill="#fff" font-size="13" font-weight="700" letter-spacing="1.2">FUNCIÓN</text>
+    <text x="25" y="76" fill="#e5f3ff" font-size="16" font-weight="700">model.py</text>
+    <text x="414" y="76" fill="#d2e3f5" font-size="15">Punto de entrada Model</text>
+    <text x="25" y="128" fill="#e5f3ff" font-size="16" font-weight="700">models/exp033.sesgo.onnx</text>
+    <text x="414" y="128" fill="#d2e3f5" font-size="15">CNN y ajuste de la clase 6</text>
+    <text x="25" y="180" fill="#e5f3ff" font-size="16" font-weight="700">src/__init__.py</text>
+    <text x="414" y="180" fill="#d2e3f5" font-size="15">Marca el paquete Python</text>
+    <text x="25" y="232" fill="#e5f3ff" font-size="16" font-weight="700">src/caracteristicas.py</text>
+    <text x="414" y="232" fill="#d2e3f5" font-size="15">Rasgos importados por model.py</text>
+    <text x="25" y="284" fill="#e5f3ff" font-size="16" font-weight="700">src/preparacion_numba.py</text>
+    <text x="414" y="284" fill="#d2e3f5" font-size="15">Preparación JIT en buffers reutilizables</text>
+    <text x="25" y="336" fill="#e5f3ff" font-size="16" font-weight="700">src/red_numpy.py</text>
+    <text x="414" y="336" fill="#d2e3f5" font-size="15">Preparación NumPy alternativa</text>
+    <text x="25" y="388" fill="#e5f3ff" font-size="16" font-weight="700">src/red_onnx.py</text>
+    <text x="414" y="388" fill="#d2e3f5" font-size="15">ONNX Runtime e I/O Binding</text>
+    <text x="25" y="440" fill="#e5f3ff" font-size="16" font-weight="700">requirements.txt</text>
+    <text x="414" y="440" fill="#d2e3f5" font-size="15">Dependencias de inferencia fijadas</text>
+  </g>
+</svg>

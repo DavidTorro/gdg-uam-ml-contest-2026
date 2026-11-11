@@ -1,6 +1,7 @@
 # Submission branch: only the inference files and public documentation belong in the checkout.
 /*
 !/.gitignore
+!/LICENSE
 !/README.md
 !/README.es.md
 !/colab.ipynb
@@ -19,6 +20,8 @@
 !/assets/language-es-inactive.svg
 !/assets/results-table-en.svg
 !/assets/results-table-es.svg
+!/assets/files-table-en.svg
+!/assets/files-table-es.svg
 
 /models/*
 !/models/exp033.sesgo.onnx

@@ -32,19 +32,7 @@ Una medición corta en Colab de 0,1064 ms por predicción sugería unos 142 punt
 
 ## Archivos de entrega
 
-```text
-.
-├── model.py                    # Punto de entrada Model
-├── models/
-│   └── exp033.sesgo.onnx       # CNN y ajuste de la clase 6
-├── src/
-│   ├── __init__.py             # Marca el paquete Python
-│   ├── caracteristicas.py      # Rasgos importados por model.py
-│   ├── preparacion_numba.py    # Preparación JIT en buffers
-│   ├── red_numpy.py            # Preparación NumPy auxiliar
-│   └── red_onnx.py             # ONNX Runtime e I/O Binding
-└── requirements.txt            # Dependencias de inferencia fijadas
-```
+![Tabla de archivos de entrega: model.py, el peso ONNX, cinco módulos src y requirements.txt con su función](assets/files-table-es.svg)
 
 El harness oficial aporta `competition_api.py`; este repositorio no lo incluye.
 
@@ -147,3 +135,7 @@ El [cuaderno de comprobación en español](https://colab.research.google.com/git
 3. Comprueba la tabla final **✅ CORRECTO · demo público**: 400 muestras, 338 aciertos y una puntuación aproximada de 3,778906. El commit mostrado es la revisión clonada en esa ejecución; la latencia puede variar.
 
 El cuaderno solo descarga el demo público y no entrena el modelo.
+
+## Licencia
+
+El código fuente, los cuadernos, la documentación y los SVG originales de este repositorio se ofrecen bajo la [licencia MIT](LICENSE). El peso ONNX `models/exp033.sesgo.onnx` queda excluido: se proporciona para evaluar esta entrega del concurso y no se concede una licencia de reutilización independiente.
