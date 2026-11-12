@@ -12,7 +12,7 @@
     <img src="https://img.shields.io/badge/author-David%20Torr%C3%B3-181717?style=for-the-badge&logo=github&logoColor=white" alt="Author: David Torró">
   </a>
   <p>
-    <a href="README.md"><img src="assets/language-en-inactive.svg" alt="Read in English" width="56" height="30"></a><img src="assets/language-es-active.svg" alt="Español (idioma actual)" width="56" height="30">
+    <a href="README.md"><img src="assets/language-en-inactive.svg" alt="Read in English" width="56" height="30"></a><img src="assets/language-es-active.svg" alt="Español (idioma actual)" width="56" height="30"><a href="https://gdg-ml.davidtorro.com/?lang=es"><img src="assets/web-link.svg" alt="Web: vídeos y visor 3D" width="72" height="30"></a>
   </p>
 </div>
 

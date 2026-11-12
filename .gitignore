@@ -24,6 +24,7 @@
 !/assets/results-table-es.svg
 !/assets/files-table-en.svg
 !/assets/files-table-es.svg
+!/assets/web-link.svg
 
 /models/*
 !/models/exp033.sesgo.onnx
